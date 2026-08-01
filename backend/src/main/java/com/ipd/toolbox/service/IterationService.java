@@ -35,9 +35,10 @@ public class IterationService {
         this.audit = audit;
     }
 
+    /** 按时间倒序（最新的在前；无开始日期的排最后），含已隐藏项——是否展示由前端决定。 */
     public List<Iteration> list(Long projectId) {
         return mapper.selectList(new QueryWrapper<Iteration>()
-                .eq("project_id", projectId).orderByDesc("id"));
+                .eq("project_id", projectId).orderByDesc("start_date").orderByDesc("id"));
     }
 
     @Transactional
@@ -74,10 +75,15 @@ public class IterationService {
         if (patch.getStartDate() != null) old.setStartDate(patch.getStartDate());
         if (patch.getEndDate() != null) old.setEndDate(patch.getEndDate());
         if (patch.getStatus() != null) old.setStatus(patch.getStatus());
+        boolean hiddenChanged = patch.getHidden() != null && !patch.getHidden().equals(old.getHidden());
+        if (patch.getHidden() != null) old.setHidden(patch.getHidden());
         old.setUpdatedBy(UserContext.currentUserId());
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);
-        audit.record(old.getProjectId(), "ITERATION", id, "UPDATE", "更新迭代 " + old.getCode(), null, old);
+        String detail = hiddenChanged
+                ? (old.getHidden() != null && old.getHidden() == 1 ? "隐藏迭代 " : "取消隐藏迭代 ") + old.getCode()
+                : "更新迭代 " + old.getCode();
+        audit.record(old.getProjectId(), "ITERATION", id, "UPDATE", detail, null, old);
         return old;
     }
 

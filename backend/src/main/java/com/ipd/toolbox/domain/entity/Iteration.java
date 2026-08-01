@@ -18,6 +18,8 @@ public class Iteration {
     private LocalDate startDate;
     private LocalDate endDate;
     private String status;
+    /** 1=在看板隐藏（不删数据） */
+    private Integer hidden;
     private Long createdBy;
     private LocalDateTime createdAt;
     private Long updatedBy;

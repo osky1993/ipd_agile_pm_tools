@@ -10,6 +10,7 @@ export interface Iteration {
   startDate?: string
   endDate?: string
   status: string
+  hidden?: number
 }
 
 export interface TestCase {
@@ -35,6 +36,7 @@ export interface TestRun {
 export const iterationApi = {
   list: (projectId: number) => http.get<any, Iteration[]>('/iterations', { params: { projectId } }),
   create: (data: Partial<Iteration>) => http.post<any, Iteration>('/iterations', data),
+  update: (id: number, data: Partial<Iteration>) => http.put<any, Iteration>(`/iterations/${id}`, data),
   items: (id: number) => http.get<any, WorkItem[]>(`/iterations/${id}/items`),
   assign: (id: number, workItemId: number) => http.post(`/iterations/${id}/assign/${workItemId}`),
   remove: (workItemId: number) => http.delete(`/iterations/items/${workItemId}`),

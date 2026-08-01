@@ -28,7 +28,11 @@ const dragId = ref<number | null>(null)
 const createSprint = ref(false)
 const sForm = reactive({ name: '', goal: '', startDate: '', endDate: '' })
 
+const showHidden = ref(false)
 const currentSprint = computed(() => sprints.value.find((s) => s.id === sprintId.value))
+/** 后端已按时间倒序返回；默认不展示已隐藏的 */
+const visibleSprints = computed(() => sprints.value.filter((s) => showHidden.value || !s.hidden))
+const hiddenCount = computed(() => sprints.value.filter((s) => s.hidden).length)
 
 function ageDays(w: WorkItem): number {
   if (!w.createdAt) return 0
@@ -42,10 +46,23 @@ function columnItems(status: string): WorkItem[] {
 async function loadSprints() {
   if (!projectId.value) return
   sprints.value = await iterationApi.list(projectId.value)
-  if (sprints.value.length && !sprints.value.find((s) => s.id === sprintId.value)) {
-    sprintId.value = sprints.value[0].id
+  // 当前选中项不在可见列表时（切项目/被隐藏），自动切到最新的可见迭代
+  if (!visibleSprints.value.find((s) => s.id === sprintId.value)) {
+    sprintId.value = visibleSprints.value.length ? visibleSprints.value[0].id : null
   }
   await loadBoard()
+}
+
+function selectSprint(id: number) {
+  if (sprintId.value === id) return
+  sprintId.value = id
+  loadBoard()
+}
+
+async function toggleHidden(s: Iteration) {
+  await iterationApi.update(s.id, { hidden: s.hidden ? 0 : 1 })
+  ElMessage.success(s.hidden ? `已恢复展示 ${s.name}` : `已隐藏 ${s.name}`)
+  await loadSprints()
 }
 
 async function loadBoard() {
@@ -131,13 +148,32 @@ onMounted(async () => {
         <el-select v-model="projectId" placeholder="项目" style="width:180px" @change="loadSprints">
           <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
         </el-select>
-        <el-select v-model="sprintId" placeholder="迭代" style="width:180px" @change="loadBoard">
-          <el-option v-for="s in sprints" :key="s.id" :label="s.name" :value="s.id" />
-        </el-select>
-        <span v-if="currentSprint" class="goal">🎯 {{ currentSprint.goal }}</span>
+        <el-checkbox v-if="hiddenCount" v-model="showHidden">显示已隐藏（{{ hiddenCount }}）</el-checkbox>
       </div>
       <el-button type="primary" @click="createSprint = true"><el-icon><Plus /></el-icon>新建迭代</el-button>
     </div>
+
+    <!-- Sprint 按时间倒序平铺展示（最新在前），点击切换看板；可隐藏/恢复 -->
+    <div class="sprint-strip">
+      <div
+        v-for="s in visibleSprints"
+        :key="s.id"
+        class="sprint-chip"
+        :class="{ active: s.id === sprintId, dimmed: s.hidden }"
+        @click="selectSprint(s.id)"
+      >
+        <div class="s-line">
+          <span class="s-name">{{ s.name }}</span>
+          <el-tag size="small" :type="s.status === 'ACTIVE' ? 'success' : s.status === 'DONE' ? 'info' : 'warning'">{{ s.status }}</el-tag>
+        </div>
+        <div class="s-range">{{ s.startDate || '未定' }} ~ {{ s.endDate || '未定' }}</div>
+        <el-button link size="small" class="s-hide" @click.stop="toggleHidden(s)">
+          {{ s.hidden ? '恢复展示' : '隐藏' }}
+        </el-button>
+      </div>
+      <div v-if="!visibleSprints.length" class="empty">暂无迭代，请先新建</div>
+    </div>
+    <p v-if="currentSprint?.goal" class="goal">🎯 {{ currentSprint.goal }}</p>
 
     <div class="board-wrap" v-loading="loading">
       <!-- Backlog 未排期 -->
@@ -213,7 +249,16 @@ onMounted(async () => {
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
 .filters { display: flex; gap: 12px; align-items: center; }
-.goal { color: #909399; font-size: 13px; }
+.goal { color: #909399; font-size: 13px; margin: 0 0 12px; }
+.sprint-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.sprint-chip { position: relative; min-width: 168px; padding: 8px 10px 6px; border: 1px solid #dcdfe6; border-radius: 8px; cursor: pointer; background: #fff; transition: all .15s; }
+.sprint-chip:hover { border-color: #409eff; }
+.sprint-chip.active { border-color: #409eff; background: #ecf5ff; box-shadow: 0 0 0 1px #409eff inset; }
+.sprint-chip.dimmed { opacity: .55; background: #f5f7fa; }
+.s-line { display: flex; align-items: center; gap: 8px; }
+.s-name { font-weight: 600; font-size: 13px; }
+.s-range { font-size: 12px; color: #909399; margin-top: 2px; }
+.s-hide { position: absolute; right: 6px; bottom: 4px; font-size: 12px; }
 .board-wrap { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; }
 .backlog, .column { flex: 1 0 200px; min-width: 200px; background: #f0f2f5; border-radius: 8px; padding: 8px; }
 .backlog { background: #eef1f6; }
