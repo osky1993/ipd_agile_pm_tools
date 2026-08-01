@@ -1,0 +1,186 @@
+<script setup lang="ts">
+import { nextTick, onMounted, ref, watch } from 'vue'
+import * as echarts from 'echarts'
+import http from '@/api/http'
+import { metricsApi, type MetricsOverview } from '@/api/metrics'
+import { type WorkItem } from '@/api/workitem'
+import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+
+interface Project { id: number; code: string; name: string }
+
+const projects = ref<Project[]>([])
+const projectId = ref<number | null>(null)
+const m = ref<MetricsOverview | null>(null)
+
+const chartEl = ref<HTMLElement | null>(null)
+let chart: echarts.ECharts | null = null
+
+const drillVisible = ref(false)
+const drillTitle = ref('')
+const drillItems = ref<WorkItem[]>([])
+const drawerVisible = ref(false)
+const currentId = ref<number | null>(null)
+
+const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: '需求', STORY: '故事', TASK: '任务', DEFECT: '缺陷', RISK: '风险', CHANGE: '变更' }
+
+async function load() {
+  if (!projectId.value) return
+  m.value = await metricsApi.overview(projectId.value)
+  await nextTick()
+  renderChart()
+}
+
+function renderChart() {
+  if (!chartEl.value || !m.value) return
+  if (!chart) chart = echarts.init(chartEl.value)
+  const q = m.value.quality
+  chart.setOption({
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0 },
+    series: [{
+      name: '缺陷', type: 'pie', radius: ['45%', '70%'],
+      data: [
+        { value: q.defectClosed, name: '已关闭', itemStyle: { color: '#67c23a' } },
+        { value: q.openDefects, name: '未关闭', itemStyle: { color: '#f56c6c' } },
+      ],
+      label: { formatter: '{b}: {c}' },
+    }],
+  })
+}
+
+async function drill(metric: string, title: string) {
+  if (!projectId.value) return
+  drillItems.value = await metricsApi.drilldown(projectId.value, metric)
+  drillTitle.value = title
+  drillVisible.value = true
+}
+function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = false; drawerVisible.value = true }
+
+watch(projectId, load)
+onMounted(async () => {
+  projects.value = await http.get<any, Project[]>('/projects')
+  if (projects.value.length) { projectId.value = projects.value[0].id }
+})
+</script>
+
+<template>
+  <div>
+    <div class="toolbar">
+      <el-select v-model="projectId" placeholder="项目" style="width:220px">
+        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
+      </el-select>
+      <a v-if="projectId" :href="metricsApi.exportCsvUrl(projectId)" target="_blank">
+        <el-button><el-icon><Download /></el-icon>导出工作项 CSV</el-button>
+      </a>
+    </div>
+
+    <template v-if="m">
+      <!-- 四组指标 -->
+      <el-row :gutter="12" class="mrow">
+        <el-col :span="6">
+          <el-card shadow="never" class="grp">
+            <template #header><b>价值与承诺</b></template>
+            <div class="tiles">
+              <div class="tile" @click="drill('capabilityAccepted', '已验收产品能力')">
+                <div class="num">{{ m.value.capabilityAccepted }}/{{ m.value.capabilityTotal }}</div><div class="lbl">能力验收</div>
+              </div>
+              <div class="tile" @click="drill('requirementAccepted', '已验收需求')">
+                <div class="num">{{ m.value.requirementAccepted }}/{{ m.value.requirementTotal }}</div><div class="lbl">需求验收</div>
+              </div>
+              <div class="tile" @click="drill('pendingChanges', '待审批变更')">
+                <div class="num">{{ m.value.pendingChanges }}</div><div class="lbl">待决策变更</div>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="grp">
+            <template #header><b>交付流动</b></template>
+            <div class="tiles">
+              <div class="tile" @click="drill('wip', '进行中工作项')"><div class="num">{{ m.flow.wip }}</div><div class="lbl">WIP</div></div>
+              <div class="tile" @click="drill('throughput', '已验收工作项')"><div class="num">{{ m.flow.throughput }}</div><div class="lbl">吞吐量</div></div>
+              <div class="tile"><div class="num">{{ m.flow.cycleP50 }}/{{ m.flow.cycleP85 }}/{{ m.flow.cycleP95 }}</div><div class="lbl">Cycle P50/85/95(天)</div></div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="grp">
+            <template #header><b>工程质量</b></template>
+            <div class="tiles">
+              <div class="tile"><div class="num" :class="{ warn: m.quality.testPassRate < 100 }">{{ m.quality.testPassRate }}%</div><div class="lbl">测试通过率</div></div>
+              <div class="tile" @click="drill('openDefects', '未关闭缺陷')"><div class="num" :class="{ warn: m.quality.openDefects }">{{ m.quality.openDefects }}</div><div class="lbl">未关缺陷</div></div>
+              <div class="tile" @click="drill('uncoveredRequirements', '未覆盖需求')"><div class="num">{{ m.quality.reqCoverage }}%</div><div class="lbl">需求测试覆盖</div></div>
+            </div>
+          </el-card>
+        </el-col>
+        <el-col :span="6">
+          <el-card shadow="never" class="grp">
+            <template #header><b>缺陷关闭情况</b></template>
+            <div ref="chartEl" class="chart"></div>
+          </el-card>
+        </el-col>
+      </el-row>
+
+      <!-- 产品成熟度：跨职能准备度 -->
+      <el-card v-if="m.maturity" shadow="never" class="readiness">
+        <template #header>
+          <div class="rd-head">
+            <b>产品成熟度 · 跨职能准备度</b>
+            <el-tag :type="m.maturity.overall.ready ? 'success' : 'danger'">{{ m.maturity.overall.ready ? '整机就绪' : '整机未就绪' }}</el-tag>
+            <span class="req">需求验收 {{ m.maturity.overall.reqAccepted }}/{{ m.maturity.overall.reqTotal }}</span>
+          </div>
+        </template>
+        <el-alert v-if="!m.maturity.overall.ready && m.maturity.overall.reqAccepted > 0" type="warning" :closable="false" show-icon class="mb">
+          <b>局部完成但整机未就绪</b> —— {{ m.maturity.overall.reasons.join('；') }}
+        </el-alert>
+        <div class="domains">
+          <div v-for="d in m.maturity.domains" :key="d.domain" class="dcard">
+            <el-progress type="dashboard" :width="84" :percentage="d.total ? Math.round((d.met / d.total) * 100) : 0"
+              :color="d.redlineUnmet.length ? '#f56c6c' : d.notReady ? '#e6a23c' : '#67c23a'" />
+            <div class="dname">{{ d.domain }}<el-tag v-if="d.redlineUnmet.length" type="danger" size="small">红线</el-tag></div>
+            <div class="ddetail">{{ d.met }}/{{ d.total }} 满足</div>
+          </div>
+        </div>
+      </el-card>
+
+      <p class="hint">指标全部由业务数据经 SQL 视图自动计算（无人工填报），点击带下划线的指标可下钻到原始工作项。不含任何个人绩效口径。</p>
+    </template>
+
+    <!-- 下钻 -->
+    <el-dialog v-model="drillVisible" :title="`下钻：${drillTitle}（${drillItems.length}）`" width="620px">
+      <el-table :data="drillItems" border size="small" @row-click="openItem" class="clickable">
+        <el-table-column prop="code" label="编号" width="140" />
+        <el-table-column label="类型" width="80"><template #default="{ row }">{{ TYPE_LABEL[row.type] }}</template></el-table-column>
+        <el-table-column prop="title" label="标题" show-overflow-tooltip />
+        <el-table-column prop="status" label="状态" width="120" />
+      </el-table>
+      <div v-if="!drillItems.length" class="empty">无数据</div>
+    </el-dialog>
+
+    <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" @changed="load" />
+  </div>
+</template>
+
+<style scoped>
+.toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.mrow { margin-bottom: 16px; }
+.grp { height: 100%; }
+.tiles { display: flex; flex-direction: column; gap: 10px; }
+.tile { cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.tile:hover { background: #f0f7ff; }
+.num { font-size: 22px; font-weight: 700; color: #409eff; }
+.num.warn { color: #e6a23c; }
+.lbl { font-size: 12px; color: #909399; text-decoration: underline dotted; }
+.chart { height: 180px; }
+.readiness { margin-bottom: 16px; }
+.rd-head { display: flex; align-items: center; gap: 12px; }
+.rd-head .req { color: #909399; font-size: 13px; margin-left: auto; }
+.domains { display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-around; }
+.dcard { text-align: center; }
+.dname { font-weight: 600; margin-top: 4px; }
+.ddetail { font-size: 12px; color: #909399; }
+.mb { margin-bottom: 12px; }
+.hint { color: #909399; font-size: 12px; }
+.clickable :deep(.el-table__row) { cursor: pointer; }
+.empty { color: #c0c4cc; text-align: center; padding: 12px; }
+</style>

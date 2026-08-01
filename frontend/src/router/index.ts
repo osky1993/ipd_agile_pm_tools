@@ -1,0 +1,38 @@
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+
+// 第一版 7 个主要页面（规划§11）
+const routes: RouteRecordRaw[] = [
+  { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
+  {
+    path: '/',
+    component: () => import('@/layout/MainLayout.vue'),
+    redirect: '/dashboard',
+    children: [
+      { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '项目驾驶舱', icon: 'DataLine' } },
+      { path: 'projects', name: 'projects', component: () => import('@/views/Projects.vue'), meta: { title: '项目·版本·阶段', icon: 'Folder' } },
+      { path: 'dcp', name: 'dcp', component: () => import('@/views/DcpBoard.vue'), meta: { title: 'DCP准入条件', icon: 'CircleCheck' } },
+      { path: 'requirements', name: 'requirements', component: () => import('@/views/RequirementTree.vue'), meta: { title: '能力与需求树', icon: 'Share' } },
+      { path: 'board', name: 'board', component: () => import('@/views/Board.vue'), meta: { title: 'Sprint看板', icon: 'Grid' } },
+      { path: 'quality', name: 'quality', component: () => import('@/views/TestDefect.vue'), meta: { title: '测试·缺陷·变更', icon: 'Warning' } },
+      { path: 'trace', name: 'trace', component: () => import('@/views/Governance.vue'), meta: { title: '追溯·风险·证据·决策', icon: 'Connection' } },
+    ],
+  },
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+
+router.beforeEach((to) => {
+  const token = localStorage.getItem('token')
+  if (!to.meta.public && !token) {
+    return { path: '/login' }
+  }
+  if (to.path === '/login' && token) {
+    return { path: '/dashboard' }
+  }
+  return true
+})
+
+export default router

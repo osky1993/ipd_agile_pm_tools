@@ -1,0 +1,22 @@
+# backend
+backend/target/
+*.log
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# 证据文件与本地数据
+data/
+backend/data/
+deploy/backups/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
