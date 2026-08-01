@@ -5,6 +5,8 @@ import {
   workItemApi, traceApi, metaApi,
   type WorkItem, type TraceView, type AuditEvent, type StatusLog,
 } from '@/api/workitem'
+import { versionApi, type ProductVersion } from '@/api/catalog'
+import { evidenceApi, type Evidence } from '@/api/governance'
 
 const props = defineProps<{ modelValue: boolean; itemId: number | null }>()
 const emit = defineEmits<{
@@ -32,13 +34,56 @@ const audits = ref<AuditEvent[]>([])
 const history = ref<StatusLog[]>([])
 const relations = ref<string[]>([])
 
-// 关联表单
+// 关联表单：关系类型中文化；目标按关系类型切换数据源（工作项/版本/证据）下拉选择
+const REL_ZH: Record<string, string> = {
+  contributes_to: '贡献于（商业目标）',
+  parent_of: '分解为（父→子）',
+  implements: '实现',
+  verifies: '验证',
+  blocks: '阻塞',
+  depends_on: '依赖于',
+  changes: '变更涉及',
+  affects: '影响',
+  evidences: '佐证（挂证据）',
+  released_in: '纳入版本',
+}
+const relLabel = (r: string) => REL_ZH[r] ?? r
+
 const traceForm = ref({ relation: '', targetId: undefined as number | undefined })
+const targetItems = ref<WorkItem[]>([])
+const targetVersions = ref<ProductVersion[]>([])
+const targetEvidences = ref<Evidence[]>([])
+
+/** 目标对象类型由关系类型决定 */
+const targetType = computed(() =>
+  traceForm.value.relation === 'released_in' ? 'PRODUCT_VERSION'
+    : traceForm.value.relation === 'evidences' ? 'EVIDENCE' : 'WORK_ITEM')
+
+async function onRelationChange() {
+  traceForm.value.targetId = undefined
+  const pid = item.value?.projectId
+  if (!pid) return
+  if (targetType.value === 'PRODUCT_VERSION' && !targetVersions.value.length) {
+    targetVersions.value = await versionApi.list(pid)
+  } else if (targetType.value === 'EVIDENCE' && !targetEvidences.value.length) {
+    targetEvidences.value = await evidenceApi.list(pid)
+  } else if (targetType.value === 'WORK_ITEM' && !targetItems.value.length) {
+    targetItems.value = await workItemApi.list(pid)
+  }
+}
 
 async function loadAll(id: number) {
   loading.value = true
   try {
+    const prevProject = item.value?.projectId
     item.value = await workItemApi.get(id)
+    if (prevProject !== item.value.projectId) {
+      // 换项目：清空目标候选缓存与表单，避免跨项目串数据
+      targetItems.value = []
+      targetVersions.value = []
+      targetEvidences.value = []
+      traceForm.value = { relation: '', targetId: undefined }
+    }
     const [ns, tr, au, hi] = await Promise.all([
       workItemApi.nextStatuses(id),
       workItemApi.traces(id),
@@ -114,14 +159,14 @@ async function doTransition(to: string) {
 
 async function addTrace() {
   if (!item.value || !traceForm.value.relation || !traceForm.value.targetId) {
-    ElMessage.warning('请选择关系类型并填写目标工作项 ID')
+    ElMessage.warning('请选择关系类型和目标对象')
     return
   }
   await traceApi.create({
     projectId: item.value.projectId,
     sourceType: 'WORK_ITEM',
     sourceId: item.value.id,
-    targetType: 'WORK_ITEM',
+    targetType: targetType.value,
     targetId: traceForm.value.targetId,
     relation: traceForm.value.relation,
   })
@@ -200,10 +245,22 @@ const statusType = (s: string) => {
           <!-- 关联追溯 -->
           <el-tab-pane :label="`关联 (${traces.length})`" name="trace">
             <div class="add-trace">
-              <el-select v-model="traceForm.relation" placeholder="关系类型" size="small" style="width:150px">
-                <el-option v-for="r in relations" :key="r" :label="r" :value="r" />
+              <el-select v-model="traceForm.relation" placeholder="关系类型" size="small" style="width:170px" @change="onRelationChange">
+                <el-option v-for="r in relations" :key="r" :label="relLabel(r)" :value="r" />
               </el-select>
-              <el-input v-model.number="traceForm.targetId" placeholder="目标工作项ID" size="small" style="width:150px" />
+              <el-select v-if="targetType === 'PRODUCT_VERSION'" v-model="traceForm.targetId" filterable
+                placeholder="选择版本" size="small" style="width:220px">
+                <el-option v-for="v in targetVersions" :key="v.id" :label="`${v.code} ${v.versionNo}`" :value="v.id" />
+              </el-select>
+              <el-select v-else-if="targetType === 'EVIDENCE'" v-model="traceForm.targetId" filterable
+                placeholder="选择证据" size="small" style="width:220px">
+                <el-option v-for="e in targetEvidences" :key="e.id" :label="`${e.code} ${e.fileName}`" :value="e.id" />
+              </el-select>
+              <el-select v-else v-model="traceForm.targetId" filterable :disabled="!traceForm.relation"
+                placeholder="选择目标工作项（可搜索）" size="small" style="width:220px">
+                <el-option v-for="w in targetItems.filter((x) => x.id !== item?.id)" :key="w.id"
+                  :label="`${w.code} ${w.title}`" :value="w.id" />
+              </el-select>
               <el-button size="small" type="primary" @click="addTrace">建立关联</el-button>
             </div>
             <el-table :data="traces" size="small" border style="margin-top:12px">
@@ -212,7 +269,9 @@ const statusType = (s: string) => {
                   <el-tag size="small" :type="row.direction === 'OUT' ? '' : 'info'">{{ row.direction === 'OUT' ? '出' : '入' }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="relation" label="关系" width="130" />
+              <el-table-column label="关系" width="140">
+                <template #default="{ row }">{{ relLabel(row.relation) }}</template>
+              </el-table-column>
               <el-table-column label="对象">
                 <template #default="{ row }">{{ row.otherCode }} {{ row.otherTitle }}</template>
               </el-table-column>

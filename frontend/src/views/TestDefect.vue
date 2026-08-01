@@ -53,10 +53,26 @@ async function loadAll() {
   for (const c of cases.value) runsMap.value[c.id] = await testApi.listRuns(c.id)
 }
 
-async function createChange() {
-  if (!projectId.value) return
-  const c = await workItemApi.create({ projectId: projectId.value, type: 'CHANGE', title: '新变更（请补充标题与 changes 关联）' })
-  ElMessage.success(`已创建 ${c.code}，请在详情「关联」页建立 changes 关系到受影响需求`)
+// 新建变更：先填表单，确认才创建（不再点开即建）
+const changeDialog = ref(false)
+const changeForm = reactive({ title: '', description: '' })
+
+function openCreateChange() {
+  changeForm.title = ''
+  changeForm.description = ''
+  changeDialog.value = true
+}
+
+async function submitChange() {
+  if (!projectId.value || !changeForm.title.trim()) return ElMessage.warning('请填写变更标题')
+  const c = await workItemApi.create({
+    projectId: projectId.value,
+    type: 'CHANGE',
+    title: changeForm.title.trim(),
+    description: changeForm.description || undefined,
+  })
+  ElMessage.success(`已创建 ${c.code}，请在详情「关联」页建立"变更涉及"关系到受影响需求`)
+  changeDialog.value = false
   await loadAll()
   currentId.value = c.id
   drawerVisible.value = true
@@ -179,7 +195,19 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
       </el-tab-pane>
 
       <el-tab-pane :label="`变更 (${changes.length})`" name="changes">
-        <div class="sub-bar"><el-button type="primary" size="small" @click="createChange"><el-icon><Plus /></el-icon>新建变更</el-button></div>
+        <div class="sub-bar"><el-button type="primary" size="small" @click="openCreateChange"><el-icon><Plus /></el-icon>新建变更</el-button></div>
+
+        <!-- 新建变更表单（确认才创建） -->
+        <el-dialog v-model="changeDialog" title="新建变更" width="480px">
+          <el-form label-width="72px">
+            <el-form-item label="标题" required><el-input v-model="changeForm.title" placeholder="如：集尘座风道重新设计以降低噪音" /></el-form-item>
+            <el-form-item label="说明"><el-input v-model="changeForm.description" type="textarea" :rows="3" placeholder="变更背景与内容（可选）" /></el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="changeDialog = false">取消</el-button>
+            <el-button type="primary" @click="submitChange">创建并打开详情</el-button>
+          </template>
+        </el-dialog>
         <el-table :data="changes" border>
           <el-table-column prop="code" label="编号" width="140" />
           <el-table-column prop="title" label="变更标题" show-overflow-tooltip />
