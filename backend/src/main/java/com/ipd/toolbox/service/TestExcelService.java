@@ -104,6 +104,7 @@ public class TestExcelService {
             try {
                 TestCase tc = new TestCase();
                 tc.setProjectId(projectId);
+                tc.setStatus("ACTIVE"); // 导入即投产可执行
                 tc.setTitle(r.title());
                 if (!r.steps().isBlank()) tc.setSteps(r.steps());
                 if (!r.expected().isBlank()) tc.setExpected(r.expected());
@@ -184,15 +185,15 @@ public class TestExcelService {
             headStyle.setFont(bold);
 
             Sheet s1 = wb.createSheet("测试用例");
-            writeRow(s1, 0, headStyle, "编号", "用例标题", "测试步骤", "预期结果", "验证需求", "最新结果", "执行次数");
+            writeRow(s1, 0, headStyle, "编号", "用例标题", "测试步骤", "预期结果", "验证需求", "状态", "最新结果", "执行次数");
             int r1 = 1;
             for (TestCase c : cases) {
                 List<TestRun> rs = runsByCase.getOrDefault(c.getId(), List.of());
                 String latest = rs.isEmpty() ? "未执行" : zhResult(rs.get(rs.size() - 1).getResult());
                 writeRow(s1, r1++, null, c.getCode(), c.getTitle(), nv(c.getSteps()), nv(c.getExpected()),
-                        reqByCase.getOrDefault(c.getId(), ""), latest, String.valueOf(rs.size()));
+                        reqByCase.getOrDefault(c.getId(), ""), zhStatus(c.getStatus()), latest, String.valueOf(rs.size()));
             }
-            int[] w1 = {14, 30, 40, 28, 18, 10, 10};
+            int[] w1 = {14, 30, 40, 28, 18, 8, 10, 10};
             for (int i = 0; i < w1.length; i++) {
                 s1.setColumnWidth(i, w1[i] * 256);
             }
@@ -228,6 +229,10 @@ public class TestExcelService {
                 c.setCellStyle(style);
             }
         }
+    }
+
+    private static String zhStatus(String s) {
+        return "DRAFT".equals(s) ? "草稿" : "DISABLED".equals(s) ? "停用" : "启用";
     }
 
     private static String zhResult(String r) {

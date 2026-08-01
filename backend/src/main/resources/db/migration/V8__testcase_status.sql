@@ -1,0 +1,3 @@
+-- 测试用例状态管理：DRAFT 草稿 / ACTIVE 启用 / DISABLED 停用（删除走逻辑删 deleted）
+-- 仅 ACTIVE 用例可执行；存量用例回填 ACTIVE。
+ALTER TABLE test_case ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'DRAFT/ACTIVE/DISABLED';

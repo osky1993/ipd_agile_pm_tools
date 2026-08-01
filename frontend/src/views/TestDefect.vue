@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { testApi, type TestCase, type TestRun } from '@/api/agile'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { changeApi, type ImpactItem } from '@/api/governance'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
-import { statusLabel, testResultLabel } from '@/utils/labels'
+import { statusLabel, testResultLabel, caseStatusLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const activeTab = ref('cases')
@@ -47,7 +47,36 @@ async function submitTcImport() {
 }
 
 const caseDialog = ref(false)
-const caseForm = reactive({ title: '', steps: '', expected: '', verifiesRequirementId: undefined as number | undefined })
+const caseForm = reactive({ title: '', steps: '', expected: '', verifiesRequirementId: undefined as number | undefined, status: 'ACTIVE' })
+const editingCase = ref<TestCase | null>(null)
+const caseStatusType = (s?: string) => (s === 'DRAFT' ? 'info' : s === 'DISABLED' ? 'warning' : 'success')
+
+function openCreateCase() {
+  editingCase.value = null
+  caseForm.title = ''; caseForm.steps = ''; caseForm.expected = ''
+  caseForm.verifiesRequirementId = undefined; caseForm.status = 'ACTIVE'
+  caseDialog.value = true
+}
+function openEditCase(c: TestCase) {
+  editingCase.value = c
+  caseForm.title = c.title
+  caseForm.steps = c.steps ?? ''
+  caseForm.expected = c.expected ?? ''
+  caseForm.status = c.status ?? 'ACTIVE'
+  caseDialog.value = true
+}
+async function changeCaseStatus(c: TestCase, status: string) {
+  await testApi.changeCaseStatus(c.id, status)
+  ElMessage.success(`已${caseStatusLabel(status)}：${c.code}`)
+  await loadAll()
+}
+async function removeCase(c: TestCase) {
+  await ElMessageBox.confirm(`删除用例 ${c.code}「${c.title}」？执行记录会保留（逻辑删除）。`, '确认删除', { type: 'warning' })
+  await testApi.deleteCase(c.id)
+  ElMessage.success('已删除')
+  await loadAll()
+}
+const runCase = ref<TestCase | null>(null)
 
 const runDialog = ref(false)
 const runForm = reactive({ testCaseId: 0, result: 'FAIL', actual: '', runVersionId: undefined as number | undefined, autoCreateDefect: true })
@@ -130,17 +159,24 @@ async function submitDecide() {
 
 async function submitCase() {
   if (!projectId.value || !caseForm.title) return ElMessage.warning('用例标题必填')
-  await testApi.createCase(
-    { projectId: projectId.value, title: caseForm.title, steps: caseForm.steps, expected: caseForm.expected },
-    caseForm.verifiesRequirementId,
-  )
-  ElMessage.success('已创建用例')
+  if (editingCase.value) {
+    await testApi.updateCase(editingCase.value.id, {
+      title: caseForm.title, steps: caseForm.steps, expected: caseForm.expected,
+    })
+    ElMessage.success('用例已更新')
+  } else {
+    await testApi.createCase(
+      { projectId: projectId.value, title: caseForm.title, steps: caseForm.steps, expected: caseForm.expected, status: caseForm.status as any },
+      caseForm.verifiesRequirementId,
+    )
+    ElMessage.success(caseForm.status === 'DRAFT' ? '已创建草稿用例（启用后可执行）' : '已创建用例')
+  }
   caseDialog.value = false
-  caseForm.title = ''; caseForm.steps = ''; caseForm.expected = ''; caseForm.verifiesRequirementId = undefined
   await loadAll()
 }
 
 function openRun(c: TestCase) {
+  runCase.value = c
   runForm.testCaseId = c.id
   runForm.result = 'FAIL'; runForm.actual = ''; runForm.runVersionId = versions.value[0]?.id; runForm.autoCreateDefect = true
   runDialog.value = true
@@ -174,7 +210,7 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
           <a v-if="projectId" :href="testApi.exportUrl(projectId)" target="_blank">
             <el-button size="small"><el-icon><Download /></el-icon>导出（含执行记录）</el-button>
           </a>
-          <el-button type="primary" size="small" @click="caseDialog = true"><el-icon><Plus /></el-icon>新建用例</el-button>
+          <el-button type="primary" size="small" @click="openCreateCase"><el-icon><Plus /></el-icon>新建用例</el-button>
         </div>
 
         <!-- 用例 Excel 导入 -->
@@ -218,8 +254,35 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
           </el-table-column>
           <el-table-column prop="code" label="编号" width="130" />
           <el-table-column prop="title" label="用例标题" show-overflow-tooltip />
-          <el-table-column label="操作" width="90">
-            <template #default="{ row }"><el-button link type="primary" @click="openRun(row)">执行</el-button></template>
+          <el-table-column label="验证需求" width="150">
+            <template #default="{ row }">
+              <el-tag v-for="v in row.verifies" :key="v.id" size="small" class="req-chip"
+                :title="v.title" @click.stop="openDefect(v as any)">{{ v.code }}</el-tag>
+              <span v-if="!row.verifies?.length" class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" :type="caseStatusType(row.status)">{{ caseStatusLabel(row.status) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220">
+            <template #default="{ row }">
+              <el-button link type="primary" :disabled="row.status && row.status !== 'ACTIVE'"
+                :title="row.status && row.status !== 'ACTIVE' ? '启用后才能执行' : ''" @click="openRun(row)">执行</el-button>
+              <el-button link @click="openEditCase(row)">编辑</el-button>
+              <el-dropdown trigger="click" @command="(s: string) => changeCaseStatus(row, s)">
+                <el-button link>状态<el-icon><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="ACTIVE" :disabled="row.status === 'ACTIVE'">启用</el-dropdown-item>
+                    <el-dropdown-item command="DISABLED" :disabled="row.status === 'DISABLED'">停用</el-dropdown-item>
+                    <el-dropdown-item command="DRAFT" :disabled="row.status === 'DRAFT'">转草稿</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button link type="danger" @click="removeCase(row)">删除</el-button>
+            </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -271,25 +334,44 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
     <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" @changed="loadAll" />
 
     <!-- 新建用例 -->
-    <el-dialog v-model="caseDialog" title="新建测试用例" width="480px">
+    <el-dialog v-model="caseDialog" :title="editingCase ? `编辑用例 ${editingCase.code}` : '新建测试用例'" width="480px">
       <el-form label-width="90px">
         <el-form-item label="用例标题"><el-input v-model="caseForm.title" /></el-form-item>
-        <el-form-item label="步骤"><el-input v-model="caseForm.steps" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="步骤"><el-input v-model="caseForm.steps" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="预期结果"><el-input v-model="caseForm.expected" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="验证需求">
+        <el-form-item v-if="!editingCase" label="验证需求">
           <el-select v-model="caseForm.verifiesRequirementId" placeholder="verifies 关联(可选)" clearable style="width:100%">
             <el-option v-for="r in requirements" :key="r.id" :label="`${r.code} ${r.title}`" :value="r.id" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="!editingCase" label="初始状态">
+          <el-radio-group v-model="caseForm.status">
+            <el-radio-button label="ACTIVE">启用（可执行）</el-radio-button>
+            <el-radio-button label="DRAFT">草稿</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="caseDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitCase">创建</el-button>
+        <el-button type="primary" @click="submitCase">{{ editingCase ? '保存' : '创建' }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 执行测试 -->
-    <el-dialog v-model="runDialog" title="执行测试" width="440px">
+    <el-dialog v-model="runDialog" :title="runCase ? `执行测试 · ${runCase.code}` : '执行测试'" width="560px">
+      <!-- 用例信息（执行时对照步骤与预期） -->
+      <div v-if="runCase" class="run-info">
+        <div class="ri-title">{{ runCase.title }}</div>
+        <div class="ri-row" v-if="runCase.steps"><span class="ri-label">测试步骤</span><div class="ri-text">{{ runCase.steps }}</div></div>
+        <div class="ri-row" v-if="runCase.expected"><span class="ri-label">预期结果</span><div class="ri-text">{{ runCase.expected }}</div></div>
+        <div class="ri-row"><span class="ri-label">验证需求</span>
+          <div class="ri-text">
+            <el-tag v-for="v in runCase.verifies" :key="v.id" size="small" class="req-chip"
+              @click="openDefect(v as any)">{{ v.code }} {{ v.title }}</el-tag>
+            <span v-if="!runCase.verifies?.length" class="muted">未关联</span>
+          </div>
+        </div>
+      </div>
       <el-form label-width="90px">
         <el-form-item label="结果">
           <el-radio-group v-model="runForm.result">
@@ -367,5 +449,12 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 .sub-bar { display: flex; gap: 10px; align-items: center; }
 .imp-result { margin-top: 12px; }
 .imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
+.req-chip { margin: 1px 4px 1px 0; cursor: pointer; }
+.muted { color: #c0c4cc; }
+.run-info { background: #f7f9fc; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.ri-title { font-weight: 600; margin-bottom: 8px; }
+.ri-row { display: flex; gap: 10px; margin-top: 6px; font-size: 13px; }
+.ri-label { color: #909399; flex-shrink: 0; width: 60px; }
+.ri-text { color: #303133; white-space: pre-wrap; }
 .mb { margin-bottom: 12px; }
 </style>

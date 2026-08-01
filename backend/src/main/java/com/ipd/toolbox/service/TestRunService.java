@@ -57,6 +57,10 @@ public class TestRunService {
         if (tc == null) {
             throw new BusinessException("用例不存在");
         }
+        if (tc.getStatus() != null && !"ACTIVE".equals(tc.getStatus())) {
+            throw new BusinessException("用例 " + tc.getCode() + " 未启用（当前"
+                    + ("DRAFT".equals(tc.getStatus()) ? "草稿" : "停用") + "），启用后才能执行");
+        }
         Project project = projectMapper.selectById(tc.getProjectId());
         Long uid = UserContext.currentUserId();
         run.setId(null);

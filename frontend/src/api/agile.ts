@@ -13,6 +13,12 @@ export interface Iteration {
   hidden?: number
 }
 
+export interface VerifiedReq {
+  id: number
+  code: string
+  title: string
+}
+
 export interface TestCase {
   id: number
   code: string
@@ -20,6 +26,8 @@ export interface TestCase {
   title: string
   steps?: string
   expected?: string
+  status?: 'DRAFT' | 'ACTIVE' | 'DISABLED'
+  verifies?: VerifiedReq[]
 }
 
 export interface TestRun {
@@ -56,6 +64,9 @@ export const testApi = {
   },
   createCase: (data: Partial<TestCase>, verifiesRequirementId?: number) =>
     http.post<any, TestCase>('/tests/cases', data, { params: verifiesRequirementId ? { verifiesRequirementId } : {} }),
+  updateCase: (id: number, data: Partial<TestCase>) => http.put<any, TestCase>(`/tests/cases/${id}`, data),
+  changeCaseStatus: (id: number, status: string) => http.post<any, TestCase>(`/tests/cases/${id}/status`, { status }),
+  deleteCase: (id: number) => http.delete(`/tests/cases/${id}`),
   listRuns: (caseId: number) => http.get<any, TestRun[]>(`/tests/cases/${caseId}/runs`),
   execute: (data: Partial<TestRun>, autoCreateDefect = true) =>
     http.post<any, TestRun>('/tests/runs', data, { params: { autoCreateDefect } }),

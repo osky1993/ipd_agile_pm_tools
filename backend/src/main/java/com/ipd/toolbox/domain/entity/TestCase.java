@@ -15,6 +15,8 @@ public class TestCase {
     private String title;
     private String steps;
     private String expected;
+    /** DRAFT 草稿 / ACTIVE 启用 / DISABLED 停用 */
+    private String status;
     private Long createdBy;
     private LocalDateTime createdAt;
     private Long updatedBy;

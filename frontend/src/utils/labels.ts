@@ -51,6 +51,10 @@ export const decisionLabel = (c: string) => DECISION_ZH[c] ?? c
 const DECISION_TYPE_ZH: Record<string, string> = { DCP: '阶段决策', CHANGE: '变更决策' }
 export const decisionTypeLabel = (t: string) => DECISION_TYPE_ZH[t] ?? t
 
+/** 测试用例状态 */
+const CASE_STATUS_ZH: Record<string, string> = { DRAFT: '草稿', ACTIVE: '启用', DISABLED: '停用' }
+export const caseStatusLabel = (s: string | null | undefined) => (s ? CASE_STATUS_ZH[s] ?? s : '启用')
+
 /** 测试执行结果 */
 const RESULT_ZH: Record<string, string> = { PASS: '通过', FAIL: '失败', BLOCKED: '阻塞' }
 export const testResultLabel = (r: string | null | undefined) => (r ? RESULT_ZH[r] ?? r : '未执行')

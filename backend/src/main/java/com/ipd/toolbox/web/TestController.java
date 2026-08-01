@@ -59,7 +59,7 @@ public class TestController {
     }
 
     @GetMapping("/cases")
-    public Result<List<TestCase>> listCases(@RequestParam Long projectId) {
+    public Result<List<TestCaseService.CaseView>> listCases(@RequestParam Long projectId) {
         return Result.ok(testCaseService.list(projectId));
     }
 
@@ -67,6 +67,28 @@ public class TestController {
     public Result<TestCase> createCase(@RequestBody TestCase tc,
                                        @RequestParam(required = false) Long verifiesRequirementId) {
         return Result.ok(testCaseService.create(tc, verifiesRequirementId));
+    }
+
+    /** 编辑用例内容。 */
+    @PutMapping("/cases/{id}")
+    public Result<TestCase> updateCase(@PathVariable Long id, @RequestBody TestCase patch) {
+        return Result.ok(testCaseService.update(id, patch));
+    }
+
+    public record StatusReq(String status) {
+    }
+
+    /** 用例状态变更（DRAFT/ACTIVE/DISABLED）。 */
+    @PostMapping("/cases/{id}/status")
+    public Result<TestCase> changeStatus(@PathVariable Long id, @RequestBody StatusReq req) {
+        return Result.ok(testCaseService.changeStatus(id, req.status()));
+    }
+
+    /** 删除用例（逻辑删）。 */
+    @DeleteMapping("/cases/{id}")
+    public Result<Void> deleteCase(@PathVariable Long id) {
+        testCaseService.delete(id);
+        return Result.ok();
     }
 
     @GetMapping("/cases/{caseId}/runs")
