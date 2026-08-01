@@ -79,6 +79,74 @@ async function load() {
   renderGraph()
 }
 
+/**
+ * DAG 分层布局：所有边都是"上游→下游"语义（前置→后继/父→子/缺陷|变更→受影响），
+ * Kahn 拓扑 + longest-path 定层（x=层），barycenter 一轮排序减少交叉（y=层内位次）。
+ * 成环边不参与分层（仍绘制）；孤立节点单独放末层之后。
+ */
+function dagLayout(nodes: { id: number }[], edges: { source: number; target: number }[]) {
+  const ids = nodes.map((n) => n.id)
+  const idSet = new Set(ids)
+  const succ = new Map<number, number[]>()
+  const pred = new Map<number, number[]>()
+  const indeg = new Map<number, number>()
+  ids.forEach((id) => indeg.set(id, 0))
+  for (const e of edges) {
+    if (!idSet.has(e.source) || !idSet.has(e.target)) continue
+    succ.set(e.source, [...(succ.get(e.source) ?? []), e.target])
+    pred.set(e.target, [...(pred.get(e.target) ?? []), e.source])
+    indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1)
+  }
+  // Kahn + longest-path 定层；剥不完的（环成员）强制放当前最大层+1
+  const layer = new Map<number, number>()
+  const queue = ids.filter((id) => (indeg.get(id) ?? 0) === 0)
+  queue.forEach((id) => layer.set(id, 0))
+  const remaining = new Map(indeg)
+  while (queue.length) {
+    const n = queue.shift()!
+    for (const s of succ.get(n) ?? []) {
+      layer.set(s, Math.max(layer.get(s) ?? 0, (layer.get(n) ?? 0) + 1))
+      const d = (remaining.get(s) ?? 0) - 1
+      remaining.set(s, d)
+      if (d === 0) queue.push(s)
+    }
+  }
+  const maxAssigned = Math.max(0, ...layer.values())
+  ids.filter((id) => !layer.has(id)).forEach((id) => layer.set(id, maxAssigned + 1)) // 环成员兜底
+
+  // 分层分组 + barycenter 一轮排序（按前驱平均位次）
+  const byLayer = new Map<number, number[]>()
+  ids.forEach((id) => {
+    const l = layer.get(id) ?? 0
+    byLayer.set(l, [...(byLayer.get(l) ?? []), id])
+  })
+  const posInLayer = new Map<number, number>()
+  const layers = [...byLayer.keys()].sort((a, b) => a - b)
+  for (const l of layers) {
+    let group = byLayer.get(l)!
+    if (l > 0) {
+      const bary = (id: number) => {
+        const ps = (pred.get(id) ?? []).filter((p) => posInLayer.has(p))
+        return ps.length ? ps.reduce((s, p) => s + posInLayer.get(p)!, 0) / ps.length : 1e9
+      }
+      group = [...group].sort((a, b) => bary(a) - bary(b))
+    }
+    group.forEach((id, i) => posInLayer.set(id, i))
+    byLayer.set(l, group)
+  }
+  // 坐标：x=层 × 间距；y=层内居中展开
+  const pos = new Map<number, { x: number; y: number }>()
+  const X_GAP = 170
+  const Y_GAP = 68
+  for (const l of layers) {
+    const group = byLayer.get(l)!
+    group.forEach((id, i) => {
+      pos.set(id, { x: l * X_GAP, y: (i - (group.length - 1) / 2) * Y_GAP })
+    })
+  }
+  return pos
+}
+
 function renderGraph() {
   const g = data.value?.graph
   if (!graphEl.value || !g) return
@@ -91,6 +159,7 @@ function renderGraph() {
     graphChart.clear()
     return
   }
+  const pos = dagLayout(g.nodes, g.edges)
   graphChart.clear()
   graphChart.setOption({
     backgroundColor: 'transparent',
@@ -106,10 +175,9 @@ function renderGraph() {
       data: STATUS_META.map((m) => m.label) },
     series: [{
       type: 'graph',
-      layout: 'force',
+      layout: 'none',           // DAG 分层：上游在左、下游在右（dagLayout 自算坐标）
       roam: true,
       draggable: true,
-      force: { repulsion: g.nodes.length < 5 ? 500 : 340, edgeLength: [90, 160], gravity: 0.12, friction: 0.25 },
       emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
       labelLayout: { hideOverlap: true },
       label: { show: true, position: 'bottom', fontSize: 11, color: '#c9d4e8',
@@ -121,20 +189,29 @@ function renderGraph() {
         id: String(n.id),
         name: n.code,
         raw: n,
+        x: pos.get(n.id)?.x ?? 0,
+        y: pos.get(n.id)?.y ?? 0,
         category: statusCat(n.status),
         symbol: SYMBOL_BY_TYPE[n.type] ?? 'circle',
-        symbolSize: Math.min(26 + n.degree * 4, 50),
+        symbolSize: Math.min(24 + n.degree * 3, 44),
         itemStyle: n.blocked
           ? { borderColor: '#f56c6c', borderWidth: 3, shadowColor: 'rgba(245,108,108,.5)', shadowBlur: 12 }
           : { borderColor: SURFACE, borderWidth: 2 },
         label: n.testBadge === 'FAIL' ? { color: '#f56c6c' } : undefined,
       })),
-      edges: g.edges.map((e) => ({
-        source: String(e.source),
-        target: String(e.target),
-        relation: e.relation,
-        lineStyle: EDGE_STYLE[e.relation],
-      })),
+      edges: g.edges.map((e) => {
+        const sx = pos.get(e.source)
+        const tx = pos.get(e.target)
+        // 同层或逆向（回边/环）加大弧度绕行，避免穿过节点
+        const back = sx && tx && tx.x <= sx.x
+        const sameRow = sx && tx && Math.abs(sx.y - tx.y) < 1 && Math.abs(tx.x - sx.x) > 200
+        return {
+          source: String(e.source),
+          target: String(e.target),
+          relation: e.relation,
+          lineStyle: { ...EDGE_STYLE[e.relation], curveness: back ? 0.45 : sameRow ? 0.25 : 0.12 },
+        }
+      }),
     }],
   })
   graphChart.off('click')
@@ -198,9 +275,9 @@ onUnmounted(() => {
         <div class="left">
           <!-- 依赖网络 -->
           <section class="panel">
-            <div class="p-title">上下游依赖网络
+            <div class="p-title">上下游依赖网络（左=上游 → 右=下游）
               <span v-if="data.graph.truncated" class="p-note">节点较多，已截取 60 个</span>
-              <span class="p-note">点击节点查看/操作详情</span>
+              <span class="p-note">点击节点查看/操作详情 · 可拖拽缩放</span>
             </div>
             <div v-if="data.graph.edges.length || data.graph.nodes.length" ref="graphEl" class="graph" />
             <div v-else class="graph-empty">

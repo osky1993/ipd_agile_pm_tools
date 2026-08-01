@@ -311,6 +311,17 @@ public class TeamService {
             }
         }
 
+        // DEP_CYCLE：依赖成环（协作事故级——A 等 B、B 等 A，谁都动不了）
+        for (List<Long> cycle : findDepCycles(deps)) {
+            String members = cycle.stream()
+                    .map(id -> items.containsKey(id) ? items.get(id).getCode() : "#" + id)
+                    .collect(Collectors.joining(" → "));
+            put(out, new Blocker("HIGH", "DEP_CYCLE", "依赖成环",
+                    "依赖链构成回路：" + members + " → …，相互等待将永远无法开工，请解除其中一条依赖",
+                    cycle.get(0), items.containsKey(cycle.get(0)) ? items.get(cycle.get(0)).getCode() : null,
+                    cycle, null));
+        }
+
         // SPRINT_RISK：迭代时间进度与完成率倒挂
         if (pulse != null && pulse.donePct() != null
                 && pulse.timePct() > SPRINT_RISK_TIME_PCT && pulse.donePct() < SPRINT_RISK_DONE_PCT) {
@@ -321,7 +332,7 @@ public class TeamService {
 
         List<Blocker> list = new ArrayList<>(out.values());
         List<String> sevOrder = List.of("HIGH", "MED", "LOW");
-        List<String> ruleOrder = List.of("DEP_BLOCKED", "VERIFY_WAIT", "SPRINT_RISK",
+        List<String> ruleOrder = List.of("DEP_CYCLE", "DEP_BLOCKED", "VERIFY_WAIT", "SPRINT_RISK",
                 "DEFECT_DRAG", "CHANGE_FREEZE", "DEP_UPCOMING", "STALE_WIP");
         list.sort(Comparator
                 .comparingInt((Blocker b) -> sevOrder.indexOf(b.severity()))
@@ -333,6 +344,56 @@ public class TeamService {
 
     private static void put(Map<String, Blocker> out, Blocker b) {
         out.putIfAbsent(b.rule() + ":" + b.itemId(), b);
+    }
+
+    /** 依赖环检测（Kahn：剥完入度为 0 的节点后，残留者即环成员；DFS 提取一条具体回路）。 */
+    static List<List<Long>> findDepCycles(List<DepPair> deps) {
+        Map<Long, List<Long>> succ = new HashMap<>();
+        Map<Long, Integer> indeg = new HashMap<>();
+        for (DepPair p : deps) {
+            succ.computeIfAbsent(p.prerequisite(), k -> new ArrayList<>()).add(p.dependent());
+            indeg.merge(p.dependent(), 1, Integer::sum);
+            indeg.putIfAbsent(p.prerequisite(), 0);
+        }
+        Deque<Long> queue = new ArrayDeque<>();
+        indeg.forEach((id, d) -> {
+            if (d == 0) {
+                queue.add(id);
+            }
+        });
+        Map<Long, Integer> remaining = new HashMap<>(indeg);
+        while (!queue.isEmpty()) {
+            Long n = queue.poll();
+            for (Long s : succ.getOrDefault(n, List.of())) {
+                if (remaining.merge(s, -1, Integer::sum) == 0) {
+                    queue.add(s);
+                }
+            }
+        }
+        Set<Long> inCycle = remaining.entrySet().stream()
+                .filter(e -> e.getValue() > 0).map(Map.Entry::getKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<List<Long>> cycles = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        for (Long start : inCycle) {
+            if (visited.contains(start)) {
+                continue;
+            }
+            // 沿环内后继走到重复点，提取一条回路
+            List<Long> path = new ArrayList<>();
+            Long cur = start;
+            while (cur != null && !path.contains(cur)) {
+                path.add(cur);
+                cur = succ.getOrDefault(cur, List.of()).stream()
+                        .filter(inCycle::contains).findFirst().orElse(null);
+            }
+            if (cur != null) {
+                List<Long> cycle = path.subList(path.indexOf(cur), path.size());
+                cycles.add(new ArrayList<>(cycle));
+                visited.addAll(cycle);
+            }
+        }
+        return cycles;
     }
 
     // ---------- 纯函数：依赖图 ----------

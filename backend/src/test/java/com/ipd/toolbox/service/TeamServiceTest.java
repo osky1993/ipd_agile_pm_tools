@@ -191,6 +191,37 @@ class TeamServiceTest {
     }
 
     @Test
+    void 依赖环检测_三节点环报HIGH_无环不报() {
+        // 1→2→3→1 成环
+        var cyclic = List.of(
+                new TeamService.DepPair(1L, 2L),
+                new TeamService.DepPair(2L, 3L),
+                new TeamService.DepPair(3L, 1L));
+        var cycles = TeamService.findDepCycles(cyclic);
+        assertEquals(1, cycles.size());
+        assertEquals(3, cycles.get(0).size());
+
+        // 无环（菱形）不报
+        var dag = List.of(
+                new TeamService.DepPair(1L, 2L),
+                new TeamService.DepPair(1L, 3L),
+                new TeamService.DepPair(2L, 4L),
+                new TeamService.DepPair(3L, 4L));
+        assertTrue(TeamService.findDepCycles(dag).isEmpty());
+
+        // 集成到规则引擎：环成员报 DEP_CYCLE HIGH
+        WorkItem a = wi(1L, "REQUIREMENT", "In Progress");
+        WorkItem b = wi(2L, "REQUIREMENT", "Ready");
+        WorkItem c = wi(3L, "TASK", "Ready");
+        var blockers = TeamService.evaluateBlockers(items(a, b, c), cyclic,
+                Map.of(), Map.of(), List.of(), null, null, today);
+        var cyc = blockers.stream().filter(x -> "DEP_CYCLE".equals(x.rule())).findFirst().orElseThrow();
+        assertEquals("HIGH", cyc.severity());
+        assertEquals(3, cyc.causeIds().size());
+        assertEquals("DEP_CYCLE", blockers.get(0).rule()); // 排序最前
+    }
+
+    @Test
     void 排序_HIGH在前() {
         WorkItem pre = wi(1L, "REQUIREMENT", "In Progress");
         WorkItem blockedA = wi(2L, "REQUIREMENT", "Ready");
