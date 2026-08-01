@@ -3,6 +3,8 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 // 第一版 7 个主要页面（规划§11）
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
+  // 多项目聚合大屏：独立于 MainLayout 的投屏页（菜单由 getRoutes 自动收录）
+  { path: '/bigscreen', name: 'bigscreen', component: () => import('@/views/ExecBoard.vue'), meta: { title: '数据大屏', icon: 'DataBoard' } },
   {
     path: '/',
     component: () => import('@/layout/MainLayout.vue'),
