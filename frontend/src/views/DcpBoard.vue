@@ -7,6 +7,7 @@ import { evidenceApi, decisionApi, type Decision } from '@/api/governance'
 import { readinessApi, type ReadinessSummary } from '@/api/readiness'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { decisionLabel } from '@/utils/labels'
 
 const STATUS_OPTS = [
   { value: 'NOT_READY', label: '未准备' },
@@ -291,7 +292,7 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
     <el-table :data="decisions" border size="small">
       <el-table-column prop="code" label="编号" width="130" />
       <el-table-column label="结论" width="120">
-        <template #default="{ row }"><el-tag size="small" :type="conclType(row.conclusion)">{{ row.conclusion }}</el-tag></template>
+        <template #default="{ row }"><el-tag size="small" :type="conclType(row.conclusion)">{{ decisionLabel(row.conclusion) }}</el-tag></template>
       </el-table-column>
       <el-table-column prop="reason" label="理由" show-overflow-tooltip />
       <el-table-column label="遗留风险" width="90">
