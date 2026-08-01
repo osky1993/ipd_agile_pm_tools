@@ -44,6 +44,16 @@ export const iterationApi = {
 
 export const testApi = {
   listCases: (projectId: number) => http.get<any, TestCase[]>('/tests/cases', { params: { projectId } }),
+  importTemplateUrl: () => '/api/tests/import-template.xlsx',
+  exportUrl: (projectId: number) => `/api/tests/export.xlsx?projectId=${projectId}`,
+  importCases: (projectId: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return http.post<any, { created: number; errors: string[] }>('/tests/import', form, {
+      params: { projectId },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
   createCase: (data: Partial<TestCase>, verifiesRequirementId?: number) =>
     http.post<any, TestCase>('/tests/cases', data, { params: verifiesRequirementId ? { verifiesRequirementId } : {} }),
   listRuns: (caseId: number) => http.get<any, TestRun[]>(`/tests/cases/${caseId}/runs`),

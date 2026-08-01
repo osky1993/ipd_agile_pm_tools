@@ -31,6 +31,21 @@ const changeStatusType = (s: string) =>
   ['Approved', 'Verified', 'Implemented'].includes(s) ? 'success'
     : s === 'Rejected' ? 'danger' : s === 'Impact Analysed' ? 'warning' : 'info'
 
+const tcImportVisible = ref(false)
+const tcImportFile = ref<File | null>(null)
+const tcImportResult = ref<{ created: number; errors: string[] } | null>(null)
+function onTcImportFile(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  tcImportFile.value = files && files.length ? files[0] : null
+  tcImportResult.value = null
+}
+async function submitTcImport() {
+  if (!projectId.value || !tcImportFile.value) return ElMessage.warning('请选择 Excel 文件')
+  tcImportResult.value = await testApi.importCases(projectId.value, tcImportFile.value)
+  ElMessage.success(`已导入 ${tcImportResult.value.created} 条用例`)
+  await loadAll()
+}
+
 const caseDialog = ref(false)
 const caseForm = reactive({ title: '', steps: '', expected: '', verifiesRequirementId: undefined as number | undefined })
 
@@ -154,7 +169,33 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 
     <el-tabs v-model="activeTab">
       <el-tab-pane :label="`测试用例 (${cases.length})`" name="cases">
-        <div class="sub-bar"><el-button type="primary" size="small" @click="caseDialog = true"><el-icon><Plus /></el-icon>新建用例</el-button></div>
+        <div class="sub-bar">
+          <el-button size="small" @click="tcImportVisible = true"><el-icon><Upload /></el-icon>导入 Excel</el-button>
+          <a v-if="projectId" :href="testApi.exportUrl(projectId)" target="_blank">
+            <el-button size="small"><el-icon><Download /></el-icon>导出（含执行记录）</el-button>
+          </a>
+          <el-button type="primary" size="small" @click="caseDialog = true"><el-icon><Plus /></el-icon>新建用例</el-button>
+        </div>
+
+        <!-- 用例 Excel 导入 -->
+        <el-dialog v-model="tcImportVisible" title="Excel 导入测试用例" width="540px">
+          <p class="hint">列：<b>用例标题(必填)</b>、测试步骤、预期结果、验证需求编号（可选，填本项目工作项编号如
+            <code>OVN1-REQ-001</code>，自动建立"验证"追溯）。
+            <a :href="testApi.importTemplateUrl()" class="tpl">⬇ 下载模板</a></p>
+          <input type="file" accept=".xlsx" @change="onTcImportFile" />
+          <div v-if="tcImportResult" class="imp-result">
+            <el-alert :type="tcImportResult.errors.length ? 'warning' : 'success'" :closable="false" show-icon>
+              成功导入 {{ tcImportResult.created }} 条{{ tcImportResult.errors.length ? `，失败 ${tcImportResult.errors.length} 条` : '' }}
+            </el-alert>
+            <ul v-if="tcImportResult.errors.length" class="imp-errors">
+              <li v-for="(e, i) in tcImportResult.errors" :key="i">{{ e }}</li>
+            </ul>
+          </div>
+          <template #footer>
+            <el-button @click="tcImportVisible = false">关闭</el-button>
+            <el-button type="primary" @click="submitTcImport">导入</el-button>
+          </template>
+        </el-dialog>
         <el-table :data="cases" border>
           <el-table-column type="expand">
             <template #default="{ row }">
@@ -320,6 +361,11 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 .runs-title { font-size: 13px; color: #606266; margin-bottom: 8px; font-weight: 600; }
 .empty { color: #c0c4cc; font-size: 12px; padding: 8px 0; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
-.hint { color: #909399; font-size: 12px; margin-top: 10px; }
+.hint { color: #909399; font-size: 12px; margin-top: 10px; line-height: 1.8; }
+.hint code { color: #409eff; background: #f0f7ff; padding: 1px 5px; border-radius: 4px; }
+.tpl { color: #409eff; text-decoration: none; margin-left: 8px; }
+.sub-bar { display: flex; gap: 10px; align-items: center; }
+.imp-result { margin-top: 12px; }
+.imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 .mb { margin-bottom: 12px; }
 </style>
