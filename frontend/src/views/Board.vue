@@ -133,8 +133,8 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 
 <template>
   <div>
-    <ProjectChips v-model="projectId" class="proj-row" @change="loadSprints" />
     <div class="toolbar">
+      <ProjectChips v-model="projectId" class="chips-flex" @change="loadSprints" />
       <div class="toolbar-right">
         <el-checkbox v-if="hiddenCount" v-model="showHidden">显示已隐藏（{{ hiddenCount }}）</el-checkbox>
         <el-button type="primary" @click="createSprint = true"><el-icon><Plus /></el-icon>新建迭代</el-button>
@@ -235,8 +235,8 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 </template>
 
 <style scoped>
-.proj-row { margin-bottom: 12px; }
-.toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 14px; }
+.toolbar { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.chips-flex { flex: 1; }
 .toolbar-right { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
 .goal { color: #909399; font-size: 13px; margin: 0 0 12px; }
 .sprint-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }

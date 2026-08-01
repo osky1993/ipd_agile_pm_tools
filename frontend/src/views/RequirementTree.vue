@@ -68,8 +68,8 @@ async function submitChild() {
 
 <template>
   <div>
-    <ProjectChips v-model="projectId" class="proj-row" @change="loadTree" />
     <div class="toolbar">
+      <ProjectChips v-model="projectId" class="chips-flex" @change="loadTree" />
       <el-button type="primary" @click="openAddChild(null)"><el-icon><Plus /></el-icon>新建根节点（能力）</el-button>
     </div>
 
@@ -116,8 +116,8 @@ async function submitChild() {
 </template>
 
 <style scoped>
-.proj-row { margin-bottom: 12px; }
-.toolbar { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px; }
+.toolbar { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
+.chips-flex { flex: 1; }
 .node { display: flex; align-items: center; gap: 10px; width: 100%; }
 .node .code { color: #606266; font-size: 13px; font-family: monospace; }
 .node .title { flex: 1; }

@@ -123,8 +123,8 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
 
 <template>
   <div>
-    <ProjectChips v-model="projectId" class="proj-row" @change="load" />
     <div class="toolbar">
+      <ProjectChips v-model="projectId" class="chips-flex" @change="load" />
       <a v-if="projectId" :href="metricsApi.exportCsvUrl(projectId)" target="_blank">
         <el-button><el-icon><Download /></el-icon>导出工作项 CSV</el-button>
       </a>
@@ -266,8 +266,8 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
 </template>
 
 <style scoped>
-.proj-row { margin-bottom: 12px; }
-.toolbar { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-bottom: 16px; }
+.toolbar { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
+.chips-flex { flex: 1; }
 .mrow { margin-bottom: 16px; }
 .grp { height: 100%; }
 .tiles { display: flex; flex-direction: column; gap: 10px; }
