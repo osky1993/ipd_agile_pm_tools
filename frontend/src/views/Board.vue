@@ -1,19 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import http from '@/api/http'
 import { iterationApi, type Iteration } from '@/api/agile'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
-
-interface Project { id: number; code: string; name: string }
+import ProjectChips from '@/components/ProjectChips.vue'
 
 const COLUMNS = ['Backlog', 'Ready', 'In Progress', 'Verification', 'Accepted']
 const GENERIC = ['CAPABILITY', 'REQUIREMENT', 'STORY', 'TASK']
 const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: '需求', STORY: '故事', TASK: '任务' }
 const TYPE_COLOR: Record<string, string> = { CAPABILITY: '', REQUIREMENT: 'success', STORY: 'warning', TASK: 'info' }
 
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const sprints = ref<Iteration[]>([])
 const sprintId = ref<number | null>(null)
@@ -51,12 +48,6 @@ async function loadSprints() {
     sprintId.value = visibleSprints.value.length ? visibleSprints.value[0].id : null
   }
   await loadBoard()
-}
-
-function selectProject(id: number) {
-  if (projectId.value === id) return
-  projectId.value = id
-  loadSprints()
 }
 
 function selectSprint(id: number) {
@@ -138,31 +129,12 @@ async function submitSprint() {
 
 function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value = true }
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) {
-    projectId.value = projects.value[0].id
-    await loadSprints()
-  }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <!-- 项目平铺选择（与下方迭代条一致的交互：点击切换，不用下拉） -->
-      <div class="project-strip">
-        <div
-          v-for="p in projects"
-          :key="p.id"
-          class="project-chip"
-          :class="{ active: p.id === projectId }"
-          @click="selectProject(p.id)"
-        >
-          <b class="p-code">{{ p.code }}</b>
-          <span class="p-name">{{ p.name }}</span>
-        </div>
-      </div>
+      <ProjectChips v-model="projectId" @change="loadSprints" />
       <div class="toolbar-right">
         <el-checkbox v-if="hiddenCount" v-model="showHidden">显示已隐藏（{{ hiddenCount }}）</el-checkbox>
         <el-button type="primary" @click="createSprint = true"><el-icon><Plus /></el-icon>新建迭代</el-button>
@@ -265,13 +237,6 @@ onMounted(async () => {
 <style scoped>
 .toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .toolbar-right { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
-.project-strip { display: flex; gap: 8px; flex-wrap: wrap; }
-.project-chip { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #dcdfe6; border-radius: 16px; cursor: pointer; background: #fff; transition: all .15s; font-size: 13px; }
-.project-chip:hover { border-color: #409eff; }
-.project-chip.active { border-color: #409eff; background: #ecf5ff; color: #409eff; }
-.project-chip .p-code { font-family: monospace; }
-.project-chip .p-name { color: #606266; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-chip.active .p-name { color: #409eff; }
 .goal { color: #909399; font-size: 13px; margin: 0 0 12px; }
 .sprint-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .sprint-chip { position: relative; min-width: 168px; padding: 8px 10px 6px; border: 1px solid #dcdfe6; border-radius: 8px; cursor: pointer; background: #fff; transition: all .15s; }

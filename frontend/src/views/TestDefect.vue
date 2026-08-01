@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '@/api/http'
 import { testApi, type TestCase, type TestRun } from '@/api/agile'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { changeApi, type ImpactItem } from '@/api/governance'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 
-interface Project { id: number; code: string; name: string }
-
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const activeTab = ref('cases')
 const cases = ref<TestCase[]>([])
@@ -130,18 +127,12 @@ async function submitRun() {
 
 function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value = true }
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) { projectId.value = projects.value[0].id; await loadAll() }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="项目" style="width:200px" @change="loadAll">
-        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-      </el-select>
+      <ProjectChips v-model="projectId" @change="loadAll" />
     </div>
 
     <el-tabs v-model="activeTab">

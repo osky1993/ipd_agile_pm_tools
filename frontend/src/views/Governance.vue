@@ -1,15 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '@/api/http'
 import { evidenceApi, decisionApi, type Evidence, type Decision } from '@/api/governance'
 import { metricsApi, type MatrixRow } from '@/api/metrics'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 
-interface Project { id: number; code: string; name: string }
-
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const activeTab = ref('risk')
 const risks = ref<WorkItem[]>([])
@@ -94,18 +91,12 @@ function openRisk(w: WorkItem) { currentId.value = w.id; drawerVisible.value = t
 
 const overdueCount = computed(() => risks.value.filter(isOverdue).length)
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) { projectId.value = projects.value[0].id; await loadAll() }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="项目" style="width:200px" @change="loadAll">
-        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-      </el-select>
+      <ProjectChips v-model="projectId" @change="loadAll" />
     </div>
 
     <el-tabs v-model="activeTab">

@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
-import http from '@/api/http'
 import { perfApi, type PerfOverview, type Metric, type Improvement, type TrendPoint, type CfdPoint } from '@/api/perf'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 import { useAuthStore } from '@/stores/auth'
 
-interface Project { id: number; code: string; name: string }
-
 const auth = useAuthStore()
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const overview = ref<PerfOverview | null>(null)
 const improvements = ref<Improvement[]>([])
@@ -296,18 +293,12 @@ const overdue = (imp: Improvement) =>
 
 function openStale(row: { id: number }) { currentId.value = row.id; drawerVisible.value = true }
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) { projectId.value = projects.value[0].id; await load() }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="项目" style="width:220px" @change="load">
-        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-      </el-select>
+      <ProjectChips v-model="projectId" @change="load" />
     </div>
 
     <el-tabs v-model="activeTab">

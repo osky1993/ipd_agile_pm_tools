@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '@/api/http'
 import { treeApi, type TreeNode } from '@/api/catalog'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 
-interface Project { id: number; code: string; name: string }
-
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const tree = ref<TreeNode[]>([])
 const loading = ref(false)
@@ -67,21 +64,12 @@ async function submitChild() {
   await loadTree()
 }
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) {
-    projectId.value = projects.value[0].id
-    await loadTree()
-  }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="选择项目" style="width:220px" @change="loadTree">
-        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-      </el-select>
+      <ProjectChips v-model="projectId" @change="loadTree" />
       <el-button type="primary" @click="openAddChild(null)"><el-icon><Plus /></el-icon>新建根节点（能力）</el-button>
     </div>
 

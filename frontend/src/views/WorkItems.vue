@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '@/api/http'
 import { workItemApi, metaApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 
-interface Project { id: number; code: string; name: string }
-
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const types = ref<{ value: string; abbr: string; label: string }[]>([])
 const typeFilter = ref<string>('')
@@ -82,11 +79,7 @@ async function submitCreate() {
 watch([projectId, typeFilter], loadList)
 
 onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
   types.value = await metaApi.workItemTypes()
-  if (projects.value.length) {
-    projectId.value = projects.value[0].id
-  }
 })
 </script>
 
@@ -94,9 +87,7 @@ onMounted(async () => {
   <div>
     <div class="toolbar">
       <div class="filters">
-        <el-select v-model="projectId" placeholder="选择项目" style="width:200px">
-          <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-        </el-select>
+        <ProjectChips v-model="projectId" />
         <el-radio-group v-model="typeFilter">
           <el-radio-button label="">全部</el-radio-button>
           <el-radio-button v-for="t in types" :key="t.value" :label="t.value">{{ t.label }}</el-radio-button>

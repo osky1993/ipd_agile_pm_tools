@@ -1,15 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import * as echarts from 'echarts'
-import http from '@/api/http'
 import { metricsApi, type MetricsOverview, type TrendPoint } from '@/api/metrics'
 import { alertApi, type Alert } from '@/api/perf'
 import { type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import ProjectChips from '@/components/ProjectChips.vue'
 
-interface Project { id: number; code: string; name: string }
-
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const m = ref<MetricsOverview | null>(null)
 
@@ -122,19 +119,12 @@ async function drill(metric: string, title: string) {
 }
 function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = false; drawerVisible.value = true }
 
-watch(projectId, load)
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) { projectId.value = projects.value[0].id }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="projectId" placeholder="项目" style="width:220px">
-        <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-      </el-select>
+      <ProjectChips v-model="projectId" @change="load" />
       <a v-if="projectId" :href="metricsApi.exportCsvUrl(projectId)" target="_blank">
         <el-button><el-icon><Download /></el-icon>导出工作项 CSV</el-button>
       </a>

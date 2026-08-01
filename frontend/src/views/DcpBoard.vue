@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import http from '@/api/http'
 import { dcpApi, type CriterionView, type Snapshot } from '@/api/dcp'
 import { stageApi, criterionApi, type StageGate, type GateCriterion } from '@/api/catalog'
 import { evidenceApi, decisionApi, type Decision } from '@/api/governance'
 import { readinessApi, type ReadinessSummary } from '@/api/readiness'
 import { workItemApi, type WorkItem } from '@/api/workitem'
-
-interface Project { id: number; code: string; name: string }
+import ProjectChips from '@/components/ProjectChips.vue'
 
 const STATUS_OPTS = [
   { value: 'NOT_READY', label: '未准备' },
@@ -20,7 +18,6 @@ const STATUS_LABEL: Record<string, string> = Object.fromEntries(STATUS_OPTS.map(
 const statusType = (s: string) => (s === 'MET' ? 'success' : s === 'PARTIAL' ? 'warning' : s === 'WAIVED' ? 'info' : 'danger')
 const conclType = (c: string) => (c === 'PASS' ? 'success' : c === 'REJECT' ? 'danger' : 'warning')
 
-const projects = ref<Project[]>([])
 const projectId = ref<number | null>(null)
 const gates = ref<StageGate[]>([])
 const gateId = ref<number | null>(null)
@@ -136,19 +133,13 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
   snapshotDialog.value = true
 }
 
-onMounted(async () => {
-  projects.value = await http.get<any, Project[]>('/projects')
-  if (projects.value.length) { projectId.value = projects.value[0].id; await loadGates() }
-})
 </script>
 
 <template>
   <div>
     <div class="toolbar">
       <div class="filters">
-        <el-select v-model="projectId" placeholder="项目" style="width:180px" @change="loadGates">
-          <el-option v-for="p in projects" :key="p.id" :label="`${p.code} ${p.name}`" :value="p.id" />
-        </el-select>
+        <ProjectChips v-model="projectId" @change="loadGates" />
         <el-radio-group :model-value="viewMode" @change="(v: any) => switchView(v)">
           <el-radio-button value="dcp">DCP 准入条件</el-radio-button>
           <el-radio-button value="readiness">跨职能准备度</el-radio-button>
