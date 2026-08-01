@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { versionApi, stageApi, criterionApi, type ProductVersion, type StageGate, type GateCriterion } from '@/api/catalog'
@@ -13,6 +13,9 @@ interface Project {
   lifecycleStatus: string
   createdAt: string
 }
+
+const LIFECYCLE_LABEL: Record<string, string> = { ACTIVE: '进行中', ON_HOLD: '已挂起', CLOSED: '已关闭' }
+const LIFECYCLE_TAG: Record<string, string> = { ACTIVE: 'success', ON_HOLD: 'warning', CLOSED: 'info' }
 
 const auth = useAuthStore()
 const list = ref<Project[]>([])
@@ -39,6 +42,21 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+async function changeLifecycle(p: Project, status: string) {
+  try {
+    await ElMessageBox.confirm(
+      `将项目「${p.name}」的生命周期从 ${LIFECYCLE_LABEL[p.lifecycleStatus] ?? p.lifecycleStatus} 变更为 ${LIFECYCLE_LABEL[status]}？` +
+        (status === 'CLOSED' ? '关闭后驾驶舱不再产生预警。' : ''),
+      '生命周期变更', { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await http.put(`/projects/${p.id}`, { lifecycleStatus: status })
+  ElMessage.success('生命周期已更新')
+  await load()
 }
 
 function openCreate() {
@@ -117,8 +135,23 @@ onMounted(load)
       <el-table-column prop="code" label="编号" width="110" />
       <el-table-column prop="name" label="项目名称" width="180" />
       <el-table-column prop="goal" label="商业目标" show-overflow-tooltip />
-      <el-table-column prop="lifecycleStatus" label="生命周期" width="110">
-        <template #default="{ row }"><el-tag size="small">{{ row.lifecycleStatus }}</el-tag></template>
+      <el-table-column prop="lifecycleStatus" label="生命周期" width="130">
+        <template #default="{ row }">
+          <el-dropdown v-if="auth.hasRole('PM')" trigger="click" @command="(s: string) => changeLifecycle(row, s)">
+            <el-tag size="small" :type="LIFECYCLE_TAG[row.lifecycleStatus] ?? 'info'" class="lc-tag">
+              {{ LIFECYCLE_LABEL[row.lifecycleStatus] ?? row.lifecycleStatus }} ▾
+            </el-tag>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="s in ['ACTIVE', 'ON_HOLD', 'CLOSED']" :key="s" :command="s"
+                  :disabled="s === row.lifecycleStatus">{{ LIFECYCLE_LABEL[s] }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tag v-else size="small" :type="LIFECYCLE_TAG[row.lifecycleStatus] ?? 'info'">
+            {{ LIFECYCLE_LABEL[row.lifecycleStatus] ?? row.lifecycleStatus }}
+          </el-tag>
+        </template>
       </el-table-column>
       <el-table-column label="操作" width="90">
         <template #default="{ row }">
@@ -197,6 +230,7 @@ onMounted(load)
 </template>
 
 <style scoped>
+.lc-tag { cursor: pointer; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .hint { color: #909399; font-size: 13px; }
 .add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

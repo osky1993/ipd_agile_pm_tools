@@ -72,6 +72,9 @@ public class ProjectService {
             old.setManagerId(patch.getManagerId());
         }
         if (patch.getLifecycleStatus() != null) {
+            if (!java.util.Set.of("ACTIVE", "ON_HOLD", "CLOSED").contains(patch.getLifecycleStatus())) {
+                throw new BusinessException("无效的项目生命周期状态: " + patch.getLifecycleStatus());
+            }
             old.setLifecycleStatus(patch.getLifecycleStatus());
         }
         old.setUpdatedBy(UserContext.currentUserId());

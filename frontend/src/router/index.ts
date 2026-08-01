@@ -15,6 +15,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'board', name: 'board', component: () => import('@/views/Board.vue'), meta: { title: 'Sprint看板', icon: 'Grid' } },
       { path: 'quality', name: 'quality', component: () => import('@/views/TestDefect.vue'), meta: { title: '测试·缺陷·变更', icon: 'Warning' } },
       { path: 'trace', name: 'trace', component: () => import('@/views/Governance.vue'), meta: { title: '追溯·风险·证据·决策', icon: 'Connection' } },
+      { path: 'performance', name: 'performance', component: () => import('@/views/Performance.vue'), meta: { title: '效能改进', icon: 'TrendCharts' } },
+      { path: 'workitems', name: 'workitems', component: () => import('@/views/WorkItems.vue'), meta: { title: '工作项清单', icon: 'Tickets' } },
     ],
   },
 ]

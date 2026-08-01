@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import http from '@/api/http'
 import { metricsApi, type MetricsOverview, type TrendPoint } from '@/api/metrics'
+import { alertApi, type Alert } from '@/api/perf'
 import { type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 
@@ -17,6 +18,14 @@ let chart: echarts.ECharts | null = null
 
 const trend = ref<TrendPoint[]>([])
 const trendDays = ref(30)
+const alerts = ref<Alert[]>([])
+const alertsExpanded = ref(false)
+const SEV_TAG: Record<string, string> = { HIGH: 'danger', MED: 'warning', LOW: 'info' }
+const sevCount = (s: string) => alerts.value.filter((a) => a.severity === s).length
+const shownAlerts = computed(() => (alertsExpanded.value ? alerts.value : alerts.value.slice(0, 5)))
+function openAlert(a: Alert) {
+  if (a.refType === 'WORK_ITEM') { currentId.value = a.refId; drawerVisible.value = true }
+}
 const defectTrendEl = ref<HTMLElement | null>(null)
 const dcpTrendEl = ref<HTMLElement | null>(null)
 let defectTrendChart: echarts.ECharts | null = null
@@ -32,9 +41,10 @@ const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: 
 
 async function load() {
   if (!projectId.value) return
-  ;[m.value, trend.value] = await Promise.all([
+  ;[m.value, trend.value, alerts.value] = await Promise.all([
     metricsApi.overview(projectId.value),
     metricsApi.trend(projectId.value, trendDays.value),
+    alertApi.list(projectId.value),
   ])
   await nextTick()
   renderChart()
@@ -131,6 +141,28 @@ onMounted(async () => {
     </div>
 
     <template v-if="m">
+      <!-- 预警与待办：数据里"该办的事"主动聚合 -->
+      <el-card v-if="alerts.length" shadow="never" class="alert-card">
+        <template #header>
+          <div class="rd-head">
+            <b>⚠️ 预警与待办（{{ alerts.length }}）</b>
+            <el-tag v-if="sevCount('HIGH')" type="danger" size="small">HIGH {{ sevCount('HIGH') }}</el-tag>
+            <el-tag v-if="sevCount('MED')" type="warning" size="small">MED {{ sevCount('MED') }}</el-tag>
+            <el-tag v-if="sevCount('LOW')" type="info" size="small">LOW {{ sevCount('LOW') }}</el-tag>
+          </div>
+        </template>
+        <div v-for="(a, i) in shownAlerts" :key="i" class="alert-row"
+          :class="{ link: a.refType === 'WORK_ITEM' }" @click="openAlert(a)">
+          <el-tag :type="SEV_TAG[a.severity]" size="small" class="sev">{{ a.severity }}</el-tag>
+          <b class="a-title">{{ a.title }}</b>
+          <span class="a-detail">{{ a.detail }}</span>
+          <router-link v-if="['GATE_CRITERION', 'DECISION'].includes(a.refType)" to="/dcp" class="a-go" @click.stop>去处理 →</router-link>
+        </div>
+        <el-button v-if="alerts.length > 5" link type="primary" size="small" @click="alertsExpanded = !alertsExpanded">
+          {{ alertsExpanded ? '收起' : `展开全部 ${alerts.length} 条` }}
+        </el-button>
+      </el-card>
+
       <!-- 四组指标 -->
       <el-row :gutter="12" class="mrow">
         <el-col :span="6">
@@ -255,6 +287,14 @@ onMounted(async () => {
 .lbl { font-size: 12px; color: #909399; text-decoration: underline dotted; }
 .chart { height: 180px; }
 .trend-chart { height: 220px; }
+.alert-card { margin-bottom: 16px; border-left: 3px solid #f56c6c; }
+.alert-row { display: flex; align-items: baseline; gap: 8px; padding: 4px 2px; border-radius: 4px; font-size: 13px; }
+.alert-row.link { cursor: pointer; }
+.alert-row.link:hover { background: #fef0f0; }
+.alert-row .sev { flex-shrink: 0; }
+.a-title { flex-shrink: 0; }
+.a-detail { color: #909399; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-go { margin-left: auto; flex-shrink: 0; color: #409eff; text-decoration: none; font-size: 12px; }
 .readiness { margin-bottom: 16px; }
 .rd-head { display: flex; align-items: center; gap: 12px; }
 .rd-head .req { color: #909399; font-size: 13px; margin-left: auto; }
