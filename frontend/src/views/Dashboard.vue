@@ -2,7 +2,7 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import http from '@/api/http'
-import { metricsApi, type MetricsOverview } from '@/api/metrics'
+import { metricsApi, type MetricsOverview, type TrendPoint } from '@/api/metrics'
 import { type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 
@@ -15,6 +15,13 @@ const m = ref<MetricsOverview | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
 let chart: echarts.ECharts | null = null
 
+const trend = ref<TrendPoint[]>([])
+const trendDays = ref(30)
+const defectTrendEl = ref<HTMLElement | null>(null)
+const dcpTrendEl = ref<HTMLElement | null>(null)
+let defectTrendChart: echarts.ECharts | null = null
+let dcpTrendChart: echarts.ECharts | null = null
+
 const drillVisible = ref(false)
 const drillTitle = ref('')
 const drillItems = ref<WorkItem[]>([])
@@ -25,9 +32,20 @@ const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: 
 
 async function load() {
   if (!projectId.value) return
-  m.value = await metricsApi.overview(projectId.value)
+  ;[m.value, trend.value] = await Promise.all([
+    metricsApi.overview(projectId.value),
+    metricsApi.trend(projectId.value, trendDays.value),
+  ])
   await nextTick()
   renderChart()
+  renderTrendCharts()
+}
+
+async function reloadTrend() {
+  if (!projectId.value) return
+  trend.value = await metricsApi.trend(projectId.value, trendDays.value)
+  await nextTick()
+  renderTrendCharts()
 }
 
 function renderChart() {
@@ -46,6 +64,44 @@ function renderChart() {
       label: { formatter: '{b}: {c}' },
     }],
   })
+}
+
+function renderTrendCharts() {
+  const t = trend.value
+  if (!t.length) return
+  const dates = t.map(p => p.date.slice(5))
+  const pct = (a: number | null, b: number | null) =>
+    a === null || b === null || !b ? null : Math.round((a / b) * 100)
+
+  if (defectTrendEl.value) {
+    if (!defectTrendChart) defectTrendChart = echarts.init(defectTrendEl.value)
+    defectTrendChart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { bottom: 0 },
+      grid: { top: 24, left: 36, right: 36, bottom: 32 },
+      xAxis: { type: 'category', data: dates },
+      yAxis: [{ type: 'value', minInterval: 1 }],
+      series: [
+        { name: '流入', type: 'bar', data: t.map(p => p.defectInflow), itemStyle: { color: '#f56c6c' } },
+        { name: '关闭', type: 'bar', data: t.map(p => p.defectClosed), itemStyle: { color: '#67c23a' } },
+        { name: '未关存量', type: 'line', connectNulls: true, data: t.map(p => p.openDefects), itemStyle: { color: '#e6a23c' } },
+      ],
+    })
+  }
+  if (dcpTrendEl.value) {
+    if (!dcpTrendChart) dcpTrendChart = echarts.init(dcpTrendEl.value)
+    dcpTrendChart.setOption({
+      tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null ? '—' : `${v}%`) },
+      legend: { bottom: 0 },
+      grid: { top: 24, left: 40, right: 36, bottom: 32 },
+      xAxis: { type: 'category', data: dates },
+      yAxis: { type: 'value', min: 0, max: 100, axisLabel: { formatter: '{value}%' } },
+      series: [
+        { name: 'DCP条件满足率', type: 'line', connectNulls: true, data: t.map(p => pct(p.criteriaMet, p.criteriaTotal)), itemStyle: { color: '#409eff' } },
+        { name: '需求验收率', type: 'line', connectNulls: true, data: t.map(p => pct(p.reqAccepted, p.reqTotal)), itemStyle: { color: '#67c23a' } },
+      ],
+    })
+  }
 }
 
 async function drill(metric: string, title: string) {
@@ -121,6 +177,32 @@ onMounted(async () => {
         </el-col>
       </el-row>
 
+      <!-- 趋势（规划§7.4）：流入/关闭精确回算，存量类指标随每日快照累积 -->
+      <el-row :gutter="12" class="mrow">
+        <el-col :span="12">
+          <el-card shadow="never">
+            <template #header>
+              <div class="rd-head">
+                <b>缺陷流入 / 关闭趋势</b>
+                <el-radio-group v-model="trendDays" size="small" style="margin-left:auto" @change="reloadTrend">
+                  <el-radio-button :value="14">14天</el-radio-button>
+                  <el-radio-button :value="30">30天</el-radio-button>
+                  <el-radio-button :value="90">90天</el-radio-button>
+                </el-radio-group>
+              </div>
+            </template>
+            <div ref="defectTrendEl" class="trend-chart"></div>
+          </el-card>
+        </el-col>
+        <el-col :span="12">
+          <el-card shadow="never">
+            <template #header><b>DCP 条件满足 / 需求验收趋势</b></template>
+            <div ref="dcpTrendEl" class="trend-chart"></div>
+            <p class="hint" style="margin:4px 0 0">存量指标来自每日快照（打开驾驶舱即记录当天），历史随使用累积。</p>
+          </el-card>
+        </el-col>
+      </el-row>
+
       <!-- 产品成熟度：跨职能准备度 -->
       <el-card v-if="m.maturity" shadow="never" class="readiness">
         <template #header>
@@ -172,6 +254,7 @@ onMounted(async () => {
 .num.warn { color: #e6a23c; }
 .lbl { font-size: 12px; color: #909399; text-decoration: underline dotted; }
 .chart { height: 180px; }
+.trend-chart { height: 220px; }
 .readiness { margin-bottom: 16px; }
 .rd-head { display: flex; align-items: center; gap: 12px; }
 .rd-head .req { color: #909399; font-size: 13px; margin-left: auto; }

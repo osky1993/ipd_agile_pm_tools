@@ -35,6 +35,13 @@ public class MetricsController {
         return Result.ok(metricsService.drilldown(projectId, metric));
     }
 
+    /** 趋势序列（规划§7.4）：缺陷流入/关闭 + 每日快照（条件满足、未关缺陷、需求验收）。 */
+    @GetMapping("/trend")
+    public Result<List<MetricsService.TrendPoint>> trend(@RequestParam Long projectId,
+                                                         @RequestParam(defaultValue = "30") int days) {
+        return Result.ok(metricsService.trend(projectId, Math.min(days, 365)));
+    }
+
     @GetMapping("/trace-matrix")
     public Result<List<TraceMatrixService.Row>> traceMatrix(@RequestParam Long projectId) {
         return Result.ok(traceMatrixService.matrix(projectId));

@@ -33,6 +33,17 @@ export interface MetricsOverview {
   maturity: ReadinessSummary
 }
 
+export interface TrendPoint {
+  date: string
+  defectInflow: number
+  defectClosed: number
+  openDefects: number | null
+  criteriaTotal: number | null
+  criteriaMet: number | null
+  reqTotal: number | null
+  reqAccepted: number | null
+}
+
 export interface MatrixRow {
   requirementId: number
   code: string
@@ -46,6 +57,8 @@ export const metricsApi = {
   overview: (projectId: number) => http.get<any, MetricsOverview>('/metrics/overview', { params: { projectId } }),
   drilldown: (projectId: number, metric: string) =>
     http.get<any, WorkItem[]>('/metrics/drilldown', { params: { projectId, metric } }),
+  trend: (projectId: number, days = 30) =>
+    http.get<any, TrendPoint[]>('/metrics/trend', { params: { projectId, days } }),
   traceMatrix: (projectId: number) => http.get<any, MatrixRow[]>('/metrics/trace-matrix', { params: { projectId } }),
   exportCsvUrl: (projectId: number) => `/api/metrics/export/work-items.csv?projectId=${projectId}`,
 }

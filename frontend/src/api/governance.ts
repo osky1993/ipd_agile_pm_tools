@@ -49,6 +49,7 @@ export const evidenceApi = {
     })
   },
   downloadUrl: (id: number) => `/api/evidence/${id}/download`,
+  previewUrl: (id: number) => `/api/evidence/${id}/preview`,
 }
 
 export const decisionApi = {

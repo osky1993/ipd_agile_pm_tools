@@ -47,4 +47,24 @@ public class EvidenceController {
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(new ByteArrayResource(bytes));
     }
+
+    /** 内联预览（T708 反馈④）：仅图片/PDF 按真实 MIME inline 返回，其余类型仍走下载。 */
+    @GetMapping("/{id}/preview")
+    public ResponseEntity<ByteArrayResource> preview(@PathVariable Long id) {
+        Evidence e = service.get(id);
+        String mime = e.getMime() == null ? "" : e.getMime();
+        boolean inlineSafe = (mime.startsWith("image/") && !mime.contains("svg"))
+                || mime.equals(MediaType.APPLICATION_PDF_VALUE);
+        if (!inlineSafe) {
+            return download(id);
+        }
+        byte[] bytes = service.readBytes(id);
+        String filename = URLEncoder.encode(e.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename*=UTF-8''" + filename)
+                // 防止 HTML/SVG 等被浏览器当活动内容执行
+                .header("X-Content-Type-Options", "nosniff")
+                .contentType(MediaType.parseMediaType(mime))
+                .body(new ByteArrayResource(bytes));
+    }
 }

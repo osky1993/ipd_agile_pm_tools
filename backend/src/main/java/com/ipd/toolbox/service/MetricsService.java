@@ -2,11 +2,16 @@ package com.ipd.toolbox.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
+import com.ipd.toolbox.domain.entity.MetricSnapshot;
 import com.ipd.toolbox.domain.entity.WorkItem;
+import com.ipd.toolbox.mapper.MetricSnapshotMapper;
 import com.ipd.toolbox.mapper.MetricsMapper;
 import com.ipd.toolbox.mapper.WorkItemMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 
 /**
@@ -18,12 +23,14 @@ public class MetricsService {
 
     private final MetricsMapper metricsMapper;
     private final WorkItemMapper workItemMapper;
+    private final MetricSnapshotMapper snapshotMapper;
     private final ReadinessService readinessService;
 
     public MetricsService(MetricsMapper metricsMapper, WorkItemMapper workItemMapper,
-                          ReadinessService readinessService) {
+                          MetricSnapshotMapper snapshotMapper, ReadinessService readinessService) {
         this.metricsMapper = metricsMapper;
         this.workItemMapper = workItemMapper;
+        this.snapshotMapper = snapshotMapper;
         this.readinessService = readinessService;
     }
 
@@ -96,6 +103,89 @@ public class MetricsService {
         }
         qw.orderByDesc("created_at");
         return workItemMapper.selectList(qw);
+    }
+
+    /**
+     * 趋势点：缺陷流入/关闭由时间戳精确回算（完整历史）；
+     * 存量类指标（未关缺陷、条件满足、需求验收）来自每日快照，无快照的日期为 null。
+     */
+    public record TrendPoint(String date, long defectInflow, long defectClosed,
+                             Integer openDefects, Integer criteriaTotal, Integer criteriaMet,
+                             Integer reqTotal, Integer reqAccepted) {
+    }
+
+    /** 趋势序列（规划§7.4）。读取时顺带对"今天"做一次快照 upsert，历史随使用累积。 */
+    @Transactional
+    public List<TrendPoint> trend(Long projectId, int days) {
+        snapshotToday(projectId);
+
+        Map<LocalDate, Long> inflow = byDay(metricsMapper.defectInflowByDay(projectId));
+        Map<LocalDate, Long> closed = byDay(metricsMapper.defectClosedByDay(projectId));
+
+        LocalDate today = LocalDate.now();
+        LocalDate start = today.minusDays(Math.max(1, days) - 1L);
+        Map<LocalDate, MetricSnapshot> snaps = new HashMap<>();
+        for (MetricSnapshot s : snapshotMapper.selectList(new QueryWrapper<MetricSnapshot>()
+                .eq("project_id", projectId).ge("snap_date", start))) {
+            snaps.put(s.getSnapDate(), s);
+        }
+
+        List<TrendPoint> points = new ArrayList<>();
+        for (LocalDate d = start; !d.isAfter(today); d = d.plusDays(1)) {
+            MetricSnapshot s = snaps.get(d);
+            points.add(new TrendPoint(d.toString(),
+                    inflow.getOrDefault(d, 0L), closed.getOrDefault(d, 0L),
+                    s == null ? null : s.getOpenDefects(),
+                    s == null ? null : s.getCriteriaTotal(),
+                    s == null ? null : s.getCriteriaMet(),
+                    s == null ? null : s.getReqTotal(),
+                    s == null ? null : s.getReqAccepted()));
+        }
+        return points;
+    }
+
+    /** 对当天做快照 upsert：同日重复读取只刷新数值，不产生重复行。 */
+    private void snapshotToday(Long projectId) {
+        Map<String, Object> m = metricsMapper.projectMetrics(projectId);
+        if (m == null) {
+            throw new BusinessException(4040, "项目不存在");
+        }
+        Map<String, Object> gc = metricsMapper.criteriaStats(projectId);
+        LocalDate today = LocalDate.now();
+
+        MetricSnapshot s = snapshotMapper.selectOne(new QueryWrapper<MetricSnapshot>()
+                .eq("project_id", projectId).eq("snap_date", today));
+        boolean fresh = s == null;
+        if (fresh) {
+            s = new MetricSnapshot();
+            s.setProjectId(projectId);
+            s.setSnapDate(today);
+            s.setCreatedAt(LocalDateTime.now());
+        }
+        s.setCriteriaTotal((int) num(gc.get("total")));
+        s.setCriteriaMet((int) num(gc.get("met")));
+        s.setOpenDefects((int) num(m.get("open_defects")));
+        s.setReqTotal((int) num(m.get("requirement_total")));
+        s.setReqAccepted((int) num(m.get("requirement_accepted")));
+        s.setUpdatedAt(LocalDateTime.now());
+        if (fresh) {
+            snapshotMapper.insert(s);
+        } else {
+            snapshotMapper.updateById(s);
+        }
+    }
+
+    /** DATE() 分组结果 → 日期计数表。驱动可能返回 java.sql.Date/LocalDate，统一走字符串解析。 */
+    private Map<LocalDate, Long> byDay(List<Map<String, Object>> rows) {
+        Map<LocalDate, Long> map = new HashMap<>();
+        for (Map<String, Object> r : rows) {
+            Object d = r.get("d");
+            if (d == null) {
+                continue;
+            }
+            map.put(LocalDate.parse(String.valueOf(d).substring(0, 10)), num(r.get("cnt")));
+        }
+        return map;
     }
 
     /** 项目全部工作项（供 CSV 导出）。 */

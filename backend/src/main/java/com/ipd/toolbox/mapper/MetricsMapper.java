@@ -28,6 +28,23 @@ public interface MetricsMapper {
             "WHERE project_id = #{projectId} AND is_readiness = 0 AND deleted = 0 GROUP BY status")
     List<Map<String, Object>> dcpStatusDist(Long projectId);
 
+    /** 缺陷按创建日流入数（完整历史，直接来自时间戳）。 */
+    @Select("SELECT DATE(created_at) AS d, COUNT(*) AS cnt FROM work_item " +
+            "WHERE project_id = #{projectId} AND type = 'DEFECT' AND deleted = 0 GROUP BY DATE(created_at)")
+    List<Map<String, Object>> defectInflowByDay(Long projectId);
+
+    /** 缺陷按关闭日关闭数（取状态时间线进入 Closed 的事件）。 */
+    @Select("SELECT DATE(l.at) AS d, COUNT(*) AS cnt FROM work_item_status_log l " +
+            "JOIN work_item w ON w.id = l.work_item_id " +
+            "WHERE w.project_id = #{projectId} AND w.type = 'DEFECT' AND w.deleted = 0 " +
+            "AND l.to_status = 'Closed' GROUP BY DATE(l.at)")
+    List<Map<String, Object>> defectClosedByDay(Long projectId);
+
+    /** DCP 条件总数与满足数（当日快照用）。 */
+    @Select("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status = 'MET' THEN 1 ELSE 0 END), 0) AS met " +
+            "FROM gate_criterion WHERE project_id = #{projectId} AND is_readiness = 0 AND deleted = 0")
+    Map<String, Object> criteriaStats(Long projectId);
+
     /** 已验收工作项的周期天数（In Progress 首次进入 → Accepted），供分位计算。 */
     @Select("SELECT DATEDIFF(w.accepted_at, sl.started_at) AS cycle_days FROM work_item w " +
             "JOIN (SELECT work_item_id, MIN(at) AS started_at FROM work_item_status_log " +

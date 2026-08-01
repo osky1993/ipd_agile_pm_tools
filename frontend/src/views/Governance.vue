@@ -26,6 +26,13 @@ const riskForm = reactive({ title: '', ownerId: undefined as number | undefined,
 const uploadDialog = ref(false)
 const uploadFile = ref<File | null>(null)
 
+const previewDialog = ref(false)
+const previewRow = ref<Evidence | null>(null)
+const isImage = (e: Evidence) => !!e.mime && e.mime.startsWith('image/') && !e.mime.includes('svg')
+const isPdf = (e: Evidence) => e.mime === 'application/pdf'
+const canPreview = (e: Evidence) => isImage(e) || isPdf(e)
+function openPreview(e: Evidence) { previewRow.value = e; previewDialog.value = true }
+
 const today = new Date().toISOString().slice(0, 10)
 
 function riskExt(w: WorkItem): { mitigation?: string; dueDate?: string } {
@@ -164,8 +171,9 @@ onMounted(async () => {
             <template #default="{ row }"><code class="sha">{{ row.sha256.slice(0, 16) }}…</code></template>
           </el-table-column>
           <el-table-column prop="createdAt" label="上传时间" width="160" />
-          <el-table-column label="操作" width="80">
+          <el-table-column label="操作" width="120">
             <template #default="{ row }">
+              <a v-if="canPreview(row)" class="dl" @click.prevent="openPreview(row)" href="#">预览</a>
               <a :href="evidenceApi.downloadUrl(row.id)" target="_blank" class="dl">下载</a>
             </template>
           </el-table-column>
@@ -209,6 +217,18 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <!-- 证据预览（T708 反馈④）：图片/PDF 内联，其余类型走下载 -->
+    <el-dialog v-model="previewDialog" :title="previewRow ? `预览：${previewRow.fileName}` : '预览'"
+      width="760px" destroy-on-close>
+      <template v-if="previewRow">
+        <img v-if="isImage(previewRow)" :src="evidenceApi.previewUrl(previewRow.id)" class="pv-img" />
+        <iframe v-else-if="isPdf(previewRow)" :src="evidenceApi.previewUrl(previewRow.id)" class="pv-pdf" />
+      </template>
+      <template #footer>
+        <a v-if="previewRow" :href="evidenceApi.downloadUrl(previewRow.id)" target="_blank" class="dl">下载原文件</a>
+      </template>
+    </el-dialog>
+
     <!-- 上传证据 -->
     <el-dialog v-model="uploadDialog" title="上传证据" width="440px">
       <input type="file" @change="onFileChange" />
@@ -230,7 +250,9 @@ onMounted(async () => {
 .sha { font-family: monospace; font-size: 12px; color: #909399; }
 .tc { margin: 2px; }
 .muted { color: #c0c4cc; }
-.dl { color: #409eff; text-decoration: none; }
+.dl { color: #409eff; text-decoration: none; margin-right: 8px; cursor: pointer; }
+.pv-img { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; }
+.pv-pdf { width: 100%; height: 70vh; border: none; }
 .hint { color: #909399; font-size: 12px; margin-top: 10px; }
 .badge { margin-left: 6px; }
 </style>
