@@ -51,11 +51,33 @@ export interface ExecAlert {
   detail: string
 }
 
+export interface DefectWeek {
+  weekStart: string
+  inflow: number
+  closed: number
+}
+
+export interface RecentEvent {
+  projectCode: string
+  summary: string
+  at: string | null
+}
+
+export interface ActiveImprovement {
+  projectCode: string
+  code: string
+  title: string
+  metricName: string | null
+}
+
 export interface ExecOverview {
   summary: ExecSummary
   projects: ProjectCard[]
   weeklyThroughput: WeekRow[]
   alerts: ExecAlert[]
+  combinedDefectTrend: DefectWeek[]
+  recentEvents: RecentEvent[]
+  activeImprovements: ActiveImprovement[]
 }
 
 export const execApi = {

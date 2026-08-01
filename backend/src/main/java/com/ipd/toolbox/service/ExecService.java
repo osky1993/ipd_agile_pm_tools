@@ -39,8 +39,19 @@ public class ExecService {
     public record ExecAlert(String severity, String type, String projectCode, String title, String detail) {
     }
 
+    public record DefectWeek(String weekStart, long inflow, long closed) {
+    }
+
+    public record RecentEvent(String projectCode, String summary, String at) {
+    }
+
+    public record ActiveImprovement(String projectCode, String code, String title, String metricName) {
+    }
+
     public record Overview(Summary summary, List<ProjectCard> projects,
-                           List<WeekRow> weeklyThroughput, List<ExecAlert> alerts) {
+                           List<WeekRow> weeklyThroughput, List<ExecAlert> alerts,
+                           List<DefectWeek> combinedDefectTrend, List<RecentEvent> recentEvents,
+                           List<ActiveImprovement> activeImprovements) {
     }
 
     private final ProjectMapper projectMapper;
@@ -51,13 +62,14 @@ public class ExecService {
     private final IterationMapper iterationMapper;
     private final ImprovementMapper improvementMapper;
     private final GateCriterionMapper criterionMapper;
+    private final AuditEventMapper auditEventMapper;
     private final AlertService alertService;
     private final ReadinessService readinessService;
 
     public ExecService(ProjectMapper projectMapper, MetricsMapper metricsMapper, PerfMapper perfMapper,
                        StageGateMapper stageGateMapper, DecisionMapper decisionMapper,
                        IterationMapper iterationMapper, ImprovementMapper improvementMapper,
-                       GateCriterionMapper criterionMapper,
+                       GateCriterionMapper criterionMapper, AuditEventMapper auditEventMapper,
                        AlertService alertService, ReadinessService readinessService) {
         this.projectMapper = projectMapper;
         this.metricsMapper = metricsMapper;
@@ -67,6 +79,7 @@ public class ExecService {
         this.iterationMapper = iterationMapper;
         this.improvementMapper = improvementMapper;
         this.criterionMapper = criterionMapper;
+        this.auditEventMapper = auditEventMapper;
         this.alertService = alertService;
         this.readinessService = readinessService;
     }
@@ -83,6 +96,10 @@ public class ExecService {
         List<ProjectCard> cards = new ArrayList<>();
         Map<String, Map<LocalDate, Long>> weeklyByProject = new LinkedHashMap<>();
         List<ExecAlert> allAlerts = new ArrayList<>();
+        Map<LocalDate, Long> defectInflowByDay = new HashMap<>();
+        Map<LocalDate, Long> defectClosedByDay = new HashMap<>();
+        Map<Long, String> codeOf = new HashMap<>();
+        all.forEach(p -> codeOf.put(p.getId(), p.getCode()));
 
         for (Project p : all) {
             switch (p.getLifecycleStatus() == null ? "ACTIVE" : p.getLifecycleStatus()) {
@@ -157,6 +174,10 @@ public class ExecService {
                 }
             }
             weeklyByProject.put(p.getCode(), byDay);
+
+            // 组合缺陷流入/关闭（按日累积，稍后分桶）
+            accumulateByDay(defectInflowByDay, metricsMapper.defectInflowByDay(p.getId()));
+            accumulateByDay(defectClosedByDay, metricsMapper.defectClosedByDay(p.getId()));
         }
 
         long activeSprints = iterationMapper.selectCount(new QueryWrapper<com.ipd.toolbox.domain.entity.Iteration>()
@@ -191,7 +212,57 @@ public class ExecService {
 
         Summary summary = new Summary(active, onHold, closed, reqTotal, reqAccepted,
                 openDefects, pendingChanges, activeSprints, alertHighSum, alertMedSum, doing, verified);
-        return new Overview(summary, cards, weeks, topAlerts);
+        return new Overview(summary, cards, weeks, topAlerts,
+                combinedDefectWeeks(defectInflowByDay, defectClosedByDay, today),
+                recentEvents(codeOf), activeImprovements(codeOf));
+    }
+
+    /** 组合缺陷流入/关闭：按 ISO 周（周一）对齐最近 8 周。 */
+    static List<DefectWeek> combinedDefectWeeks(Map<LocalDate, Long> inflow, Map<LocalDate, Long> closed,
+                                                LocalDate today) {
+        List<PerfService.WeekPoint> in = PerfService.bucketWeeks(inflow, today, 8);
+        List<PerfService.WeekPoint> cl = PerfService.bucketWeeks(closed, today, 8);
+        List<DefectWeek> out = new ArrayList<>();
+        for (int i = 0; i < in.size(); i++) {
+            out.add(new DefectWeek(in.get(i).weekStart(), in.get(i).count(), cl.get(i).count()));
+        }
+        return out;
+    }
+
+    private static void accumulateByDay(Map<LocalDate, Long> acc, List<Map<String, Object>> rows) {
+        for (Map<String, Object> r : rows) {
+            Object d = r.get("d");
+            if (d != null) {
+                acc.merge(LocalDate.parse(String.valueOf(d).substring(0, 10)), num(r.get("cnt")), Long::sum);
+            }
+        }
+    }
+
+    /** 最新动态：全项目审计流最近 15 条（summary 已是现成中文描述）。 */
+    private List<RecentEvent> recentEvents(Map<Long, String> codeOf) {
+        List<RecentEvent> out = new ArrayList<>();
+        for (com.ipd.toolbox.domain.entity.AuditEvent e : auditEventMapper.selectList(
+                new QueryWrapper<com.ipd.toolbox.domain.entity.AuditEvent>()
+                        .in("action", "CREATE", "STATUS_CHANGE", "DECISION")
+                        .orderByDesc("id").last("LIMIT 15"))) {
+            out.add(new RecentEvent(codeOf.getOrDefault(e.getProjectId(), "?"),
+                    e.getSummary(), e.getAt() == null ? null : e.getAt().toString()));
+        }
+        return out;
+    }
+
+    /** 进行中的流程改进。 */
+    private List<ActiveImprovement> activeImprovements(Map<Long, String> codeOf) {
+        List<ActiveImprovement> out = new ArrayList<>();
+        for (Improvement i : improvementMapper.selectList(new QueryWrapper<Improvement>()
+                .eq("status", "DOING").orderByDesc("id").last("LIMIT 8"))) {
+            out.add(new ActiveImprovement(codeOf.getOrDefault(i.getProjectId(), "?"),
+                    i.getCode(), i.getTitle(),
+                    i.getMetricKey() == null ? null
+                            : PerfService.def(i.getMetricKey()).map(PerfService.MetricDef::name)
+                            .orElse(i.getMetricKey())));
+        }
+        return out;
     }
 
     /**
