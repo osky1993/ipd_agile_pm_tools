@@ -65,6 +65,10 @@ function openEditCase(c: TestCase) {
   caseForm.status = c.status ?? 'ACTIVE'
   caseDialog.value = true
 }
+function onCaseAction(c: TestCase, cmd: string) {
+  if (cmd === 'delete') return removeCase(c)
+  return changeCaseStatus(c, cmd)
+}
 async function changeCaseStatus(c: TestCase, status: string) {
   await testApi.changeCaseStatus(c.id, status)
   ElMessage.success(`已${caseStatusLabel(status)}：${c.code}`)
@@ -266,22 +270,26 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
               <el-tag size="small" :type="caseStatusType(row.status)">{{ caseStatusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="220">
+          <el-table-column label="操作" width="150" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" :disabled="row.status && row.status !== 'ACTIVE'"
-                :title="row.status && row.status !== 'ACTIVE' ? '启用后才能执行' : ''" @click="openRun(row)">执行</el-button>
-              <el-button link @click="openEditCase(row)">编辑</el-button>
-              <el-dropdown trigger="click" @command="(s: string) => changeCaseStatus(row, s)">
-                <el-button link>状态<el-icon><ArrowDown /></el-icon></el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="ACTIVE" :disabled="row.status === 'ACTIVE'">启用</el-dropdown-item>
-                    <el-dropdown-item command="DISABLED" :disabled="row.status === 'DISABLED'">停用</el-dropdown-item>
-                    <el-dropdown-item command="DRAFT" :disabled="row.status === 'DRAFT'">转草稿</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-button link type="danger" @click="removeCase(row)">删除</el-button>
+              <div class="row-ops">
+                <el-button link type="primary" size="small" :disabled="row.status && row.status !== 'ACTIVE'"
+                  :title="row.status && row.status !== 'ACTIVE' ? '启用后才能执行' : ''" @click="openRun(row)">执行</el-button>
+                <el-divider direction="vertical" />
+                <el-button link size="small" @click="openEditCase(row)">编辑</el-button>
+                <el-divider direction="vertical" />
+                <el-dropdown trigger="click" @command="(cmd: string) => onCaseAction(row, cmd)">
+                  <el-button link size="small" class="more-btn">⋯</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="ACTIVE" :disabled="row.status === 'ACTIVE'">✓ 启用</el-dropdown-item>
+                      <el-dropdown-item command="DISABLED" :disabled="row.status === 'DISABLED'">⏸ 停用</el-dropdown-item>
+                      <el-dropdown-item command="DRAFT" :disabled="row.status === 'DRAFT'">✎ 转草稿</el-dropdown-item>
+                      <el-dropdown-item command="delete" divided style="color:#f56c6c">🗑 删除</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -450,6 +458,9 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 .imp-result { margin-top: 12px; }
 .imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 .req-chip { margin: 1px 4px 1px 0; cursor: pointer; }
+.row-ops { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.row-ops .el-button { margin: 0; font-weight: normal; }
+.more-btn { font-size: 16px; letter-spacing: 1px; padding: 0 4px; }
 .muted { color: #c0c4cc; }
 .run-info { background: #f7f9fc; border: 1px solid #ebeef5; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
 .ri-title { font-weight: 600; margin-bottom: 8px; }
