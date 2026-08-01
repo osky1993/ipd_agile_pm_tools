@@ -85,15 +85,14 @@ onMounted(async () => {
 
 <template>
   <div>
+    <!-- 第一行：项目 chips 独占；第二行：类型筛选 + 操作 -->
+    <ProjectChips v-model="projectId" class="proj-row" />
     <div class="toolbar">
-      <div class="filters">
-        <ProjectChips v-model="projectId" />
-        <el-radio-group v-model="typeFilter">
-          <el-radio-button label="">全部</el-radio-button>
-          <el-radio-button v-for="t in types" :key="t.value" :label="t.value">{{ t.label }}</el-radio-button>
-        </el-radio-group>
-      </div>
-      <div>
+      <el-radio-group v-model="typeFilter">
+        <el-radio-button label="">全部</el-radio-button>
+        <el-radio-button v-for="t in types" :key="t.value" :label="t.value">{{ t.label }}</el-radio-button>
+      </el-radio-group>
+      <div class="ops">
         <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>导入 CSV</el-button>
         <el-button type="primary" @click="createVisible = true"><el-icon><Plus /></el-icon>新建工作项</el-button>
       </div>
@@ -152,8 +151,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.filters { display: flex; gap: 12px; align-items: center; }
+.proj-row { margin-bottom: 12px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.ops { display: flex; gap: 10px; flex-shrink: 0; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 .hint { color: #909399; font-size: 12px; margin: 0 0 10px; }
 .imp-result { margin-top: 12px; }

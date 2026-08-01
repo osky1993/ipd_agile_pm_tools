@@ -137,9 +137,10 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
 
 <template>
   <div>
+    <!-- 第一行：项目 chips 独占；第二行：视图切换/阶段选择/操作 -->
+    <ProjectChips v-model="projectId" class="proj-row" @change="loadGates" />
     <div class="toolbar">
       <div class="filters">
-        <ProjectChips v-model="projectId" @change="loadGates" />
         <el-radio-group :model-value="viewMode" @change="(v: any) => switchView(v)">
           <el-radio-button value="dcp">DCP 准入条件</el-radio-button>
           <el-radio-button value="readiness">跨职能准备度</el-radio-button>
@@ -353,6 +354,7 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
 </template>
 
 <style scoped>
+.proj-row { margin-bottom: 12px; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .filters { display: flex; gap: 12px; }
 .kpis { margin-bottom: 16px; }
