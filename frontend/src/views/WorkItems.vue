@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { workItemApi, metaApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import { statusLabel } from '@/utils/labels'
 import ProjectChips from '@/components/ProjectChips.vue'
 
 const projectId = ref<number | null>(null)
@@ -123,7 +124,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="title" label="标题" show-overflow-tooltip />
       <el-table-column label="状态" width="130">
-        <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag></template>
+        <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status, row.type) }}</el-tag></template>
       </el-table-column>
       <el-table-column prop="priority" label="优先级" width="80" />
       <el-table-column prop="ownerId" label="责任人" width="80" />

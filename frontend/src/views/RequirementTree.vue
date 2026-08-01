@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { treeApi, type TreeNode } from '@/api/catalog'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { statusLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const tree = ref<TreeNode[]>([])
@@ -86,7 +87,7 @@ async function submitChild() {
             <el-tag size="small" :type="TYPE_COLOR[data.type]">{{ TYPE_LABEL[data.type] }}</el-tag>
             <span class="code">{{ data.code }}</span>
             <span class="title">{{ data.title }}</span>
-            <el-tag size="small" :type="statusType(data.status)" class="status">{{ data.status }}</el-tag>
+            <el-tag size="small" :type="statusType(data.status)" class="status">{{ statusLabel(data.status) }}</el-tag>
             <span class="actions">
               <el-button link type="primary" size="small" @click.stop="openDetail(data)">详情</el-button>
               <el-button link type="primary" size="small" @click.stop="openAddChild(data)">+子项</el-button>

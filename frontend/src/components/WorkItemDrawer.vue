@@ -7,6 +7,7 @@ import {
 } from '@/api/workitem'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { evidenceApi, type Evidence } from '@/api/governance'
+import { statusLabel } from '@/utils/labels'
 
 const props = defineProps<{ modelValue: boolean; itemId: number | null }>()
 const emit = defineEmits<{
@@ -195,7 +196,7 @@ const statusType = (s: string) => {
     <div v-loading="loading">
       <template v-if="item">
         <div class="head">
-          <el-tag :type="statusType(item.status)" size="large">{{ item.status }}</el-tag>
+          <el-tag :type="statusType(item.status)" size="large">{{ statusLabel(item.status, item.type) }}</el-tag>
           <div class="status-actions">
             <span class="label">流转到：</span>
             <el-button
@@ -205,7 +206,7 @@ const statusType = (s: string) => {
               type="primary"
               plain
               @click="doTransition(s)"
-            >{{ s }}</el-button>
+            >{{ statusLabel(s, item?.type) }}</el-button>
             <span v-if="!nextStatuses.length" class="terminal">（终态）</span>
           </div>
         </div>
@@ -287,7 +288,7 @@ const statusType = (s: string) => {
           <el-tab-pane label="审计与时间线" name="audit">
             <el-timeline>
               <el-timeline-item v-for="h in history" :key="'h'+h.id" :timestamp="h.at" placement="top" type="primary">
-                <b>{{ h.fromStatus || '（新建）' }} → {{ h.toStatus }}</b>
+                <b>{{ h.fromStatus ? statusLabel(h.fromStatus, item?.type) : '（新建）' }} → {{ statusLabel(h.toStatus, item?.type) }}</b>
                 <span v-if="h.reason" class="reason">：{{ h.reason }}</span>
               </el-timeline-item>
             </el-timeline>

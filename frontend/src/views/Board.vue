@@ -5,6 +5,7 @@ import { iterationApi, type Iteration } from '@/api/agile'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { statusLabel, sprintStatusLabel } from '@/utils/labels'
 
 const COLUMNS = ['Backlog', 'Ready', 'In Progress', 'Verification', 'Accepted']
 const GENERIC = ['CAPABILITY', 'REQUIREMENT', 'STORY', 'TASK']
@@ -152,7 +153,7 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
       >
         <div class="s-line">
           <span class="s-name">{{ s.name }}</span>
-          <el-tag size="small" :type="s.status === 'ACTIVE' ? 'success' : s.status === 'DONE' ? 'info' : 'warning'">{{ s.status }}</el-tag>
+          <el-tag size="small" :type="s.status === 'ACTIVE' ? 'success' : s.status === 'DONE' ? 'info' : 'warning'">{{ sprintStatusLabel(s.status) }}</el-tag>
         </div>
         <div class="s-range">{{ s.startDate || '未定' }} ~ {{ s.endDate || '未定' }}</div>
         <el-button link size="small" class="s-hide" @click.stop="toggleHidden(s)">
@@ -188,7 +189,7 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
         @dragover.prevent
         @drop="onDrop(col)"
       >
-        <div class="col-head">{{ col }}<el-tag size="small" round>{{ columnItems(col).length }}</el-tag></div>
+        <div class="col-head">{{ statusLabel(col) }}<el-tag size="small" round>{{ columnItems(col).length }}</el-tag></div>
         <div class="cards">
           <el-card
             v-for="w in columnItems(col)"

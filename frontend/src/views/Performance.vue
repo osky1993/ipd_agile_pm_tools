@@ -6,6 +6,7 @@ import { perfApi, type PerfOverview, type Metric, type Improvement, type TrendPo
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
 import { useAuthStore } from '@/stores/auth'
+import { statusLabel } from '@/utils/labels'
 
 const auth = useAuthStore()
 const projectId = ref<number | null>(null)
@@ -111,7 +112,7 @@ function renderCfd() {
     xAxis: { type: 'category', boundaryGap: false, data: cfd.value.map((p) => p.date.slice(5)) },
     yAxis: { type: 'value', minInterval: 1 },
     series: CFD_ORDER.map((s) => ({
-      name: s,
+      name: statusLabel(s),
       type: 'line',
       stack: 'cfd',
       areaStyle: { color: CFD_COLORS[s] },

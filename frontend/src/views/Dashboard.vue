@@ -6,6 +6,7 @@ import { alertApi, type Alert } from '@/api/perf'
 import { type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { statusLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const m = ref<MetricsOverview | null>(null)
@@ -256,7 +257,7 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
         <el-table-column prop="code" label="编号" width="140" />
         <el-table-column label="类型" width="80"><template #default="{ row }">{{ TYPE_LABEL[row.type] }}</template></el-table-column>
         <el-table-column prop="title" label="标题" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="120" />
+        <el-table-column label="状态" width="120"><template #default="{ row }">{{ statusLabel(row.status, row.type) }}</template></el-table-column>
       </el-table>
       <div v-if="!drillItems.length" class="empty">无数据</div>
     </el-dialog>

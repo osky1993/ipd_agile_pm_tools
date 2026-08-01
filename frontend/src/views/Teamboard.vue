@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import { teamApi, type TeamOverview, type Blocker, type Handoff } from '@/api/team'
 import ProjectChips from '@/components/ProjectChips.vue'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import { statusLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const data = ref<TeamOverview | null>(null)
@@ -167,7 +168,7 @@ function renderGraph() {
       formatter: (p: any) => {
         if (p.dataType === 'edge') return REL_ZH[p.data.relation] ?? p.data.relation
         const n = p.data.raw
-        return `<b>${n.code}</b> ${n.title}<br/>状态：${n.status}${n.blocked ? '　<span style="color:#f56c6c">⛔被阻塞</span>' : ''}` +
+        return `<b>${n.code}</b> ${n.title}<br/>状态：${statusLabel(n.status, n.type)}${n.blocked ? '　<span style="color:#f56c6c">⛔被阻塞</span>' : ''}` +
           (n.testBadge ? `<br/>验证用例：${n.testBadge === 'PASS' ? '✓ 通过' : n.testBadge === 'FAIL' ? '✗ 失败' : '○ 未执行'}` : '')
       },
     },
@@ -336,7 +337,7 @@ onUnmounted(() => {
                 <span v-if="it.blocked" class="o-block">⛔</span>
                 <span class="o-code">{{ it.code }}</span>
                 <span class="o-title">{{ it.title }}</span>
-                <span class="o-status">{{ it.status }}</span>
+                <span class="o-status">{{ statusLabel(it.status, it.type) }}</span>
                 <span v-if="it.stallDays > 7" class="o-stall">{{ it.stallDays }}天未动</span>
               </div>
             </div>

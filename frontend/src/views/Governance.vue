@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { evidenceApi, decisionApi, type Evidence, type Decision } from '@/api/governance'
 import { metricsApi, type MatrixRow } from '@/api/metrics'
 import { workItemApi, type WorkItem } from '@/api/workitem'
+import { statusLabel, decisionLabel, decisionTypeLabel, testResultLabel } from '@/utils/labels'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
 
@@ -114,7 +115,7 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
             <template #default="{ row }">
               <span v-if="!row.tests.length" class="muted">—</span>
               <el-tag v-for="t in row.tests" :key="t.testCode" :type="runType(t.latestResult)" size="small" class="tc">
-                {{ t.testCode }} {{ t.latestResult || '未执行' }}
+                {{ t.testCode }} {{ testResultLabel(t.latestResult) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -144,7 +145,7 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
             </template>
           </el-table-column>
           <el-table-column label="状态" width="110">
-            <template #default="{ row }"><el-tag size="small" :type="riskStatusType(row.status)">{{ row.status }}</el-tag></template>
+            <template #default="{ row }"><el-tag size="small" :type="riskStatusType(row.status)">{{ statusLabel(row.status, 'RISK') }}</el-tag></template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -175,9 +176,9 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
       <el-tab-pane :label="`决策 (${decisions.length})`" name="decision">
         <el-table :data="decisions" border>
           <el-table-column prop="code" label="编号" width="130" />
-          <el-table-column prop="decisionType" label="类型" width="90" />
+          <el-table-column label="类型" width="90"><template #default="{ row }">{{ decisionTypeLabel(row.decisionType) }}</template></el-table-column>
           <el-table-column label="结论" width="120">
-            <template #default="{ row }"><el-tag size="small" :type="decisionType(row.conclusion)">{{ row.conclusion }}</el-tag></template>
+            <template #default="{ row }"><el-tag size="small" :type="decisionType(row.conclusion)">{{ decisionLabel(row.conclusion) }}</el-tag></template>
           </el-table-column>
           <el-table-column prop="reason" label="理由" show-overflow-tooltip />
           <el-table-column label="决策人" width="80">

@@ -7,6 +7,7 @@ import { changeApi, type ImpactItem } from '@/api/governance'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { statusLabel, testResultLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const activeTab = ref('cases')
@@ -162,7 +163,7 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
                 <el-table :data="runsMap[row.id]" size="small" border>
                   <el-table-column prop="code" label="编号" width="130" />
                   <el-table-column label="结果" width="90">
-                    <template #default="{ row: r }"><el-tag size="small" :type="resultType(r.result)">{{ r.result }}</el-tag></template>
+                    <template #default="{ row: r }"><el-tag size="small" :type="resultType(r.result)">{{ testResultLabel(r.result) }}</el-tag></template>
                   </el-table-column>
                   <el-table-column prop="actual" label="实际结果" show-overflow-tooltip />
                   <el-table-column label="生成缺陷" width="90">
@@ -187,7 +188,7 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
           <el-table-column prop="code" label="编号" width="140" />
           <el-table-column prop="title" label="缺陷标题" show-overflow-tooltip />
           <el-table-column label="状态" width="120">
-            <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag></template>
+            <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
           <el-table-column prop="ownerId" label="责任人" width="80" />
         </el-table>
@@ -212,7 +213,7 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
           <el-table-column prop="code" label="编号" width="140" />
           <el-table-column prop="title" label="变更标题" show-overflow-tooltip />
           <el-table-column label="状态" width="140">
-            <template #default="{ row }"><el-tag size="small" :type="changeStatusType(row.status)">{{ row.status }}</el-tag></template>
+            <template #default="{ row }"><el-tag size="small" :type="changeStatusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
           <el-table-column label="操作" width="240">
             <template #default="{ row }">
