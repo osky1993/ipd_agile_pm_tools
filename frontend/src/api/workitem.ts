@@ -62,6 +62,15 @@ export const workItemApi = {
   audit: (id: number) => http.get<any, AuditEvent[]>(`/work-items/${id}/audit`),
   traces: (id: number) => http.get<any, TraceView[]>(`/work-items/${id}/traces`),
   search: (q: string) => http.get<any, WorkItem[]>('/work-items/search', { params: { q } }),
+  treeTemplateUrl: () => '/api/work-items/import-template.xlsx',
+  importTree: (projectId: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return http.post<any, { created: number; errors: string[] }>('/work-items/import-tree', form, {
+      params: { projectId },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
   importCsv: (projectId: number, file: File) => {
     const form = new FormData()
     form.append('file', file)

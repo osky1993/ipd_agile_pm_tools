@@ -18,12 +18,15 @@ import java.util.Set;
 public class WorkItemController {
 
     private final WorkItemService service;
+    private final com.ipd.toolbox.service.TreeImportService treeImportService;
     private final AuditService auditService;
     private final TraceLinkService traceLinkService;
 
     public WorkItemController(WorkItemService service, AuditService auditService,
-                              TraceLinkService traceLinkService) {
+                              TraceLinkService traceLinkService,
+                              com.ipd.toolbox.service.TreeImportService treeImportService) {
         this.service = service;
+        this.treeImportService = treeImportService;
         this.auditService = auditService;
         this.traceLinkService = traceLinkService;
     }
@@ -43,6 +46,24 @@ public class WorkItemController {
     @GetMapping("/search")
     public Result<List<WorkItem>> search(@RequestParam String q) {
         return Result.ok(service.search(q));
+    }
+
+    /** 能力与需求树 Excel 导入模板下载。 */
+    @GetMapping("/import-template.xlsx")
+    public org.springframework.http.ResponseEntity<byte[]> importTemplate() {
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=requirement-tree-template.xlsx")
+                .contentType(org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(treeImportService.template());
+    }
+
+    /** 能力与需求树 Excel 导入（层级序号 1/1.1/1.1.1 表达树）。 */
+    @PostMapping("/import-tree")
+    public Result<java.util.Map<String, Object>> importTree(
+            @RequestParam Long projectId,
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        return Result.ok(treeImportService.importExcel(projectId, file.getInputStream()));
     }
 
     /** CSV 批量导入（列：类型,标题,描述,优先级,验收条件,估算）。 */
