@@ -5,6 +5,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
   // 多项目聚合大屏：独立于 MainLayout 的投屏页（菜单由 getRoutes 自动收录）
   { path: '/bigscreen', name: 'bigscreen', component: () => import('@/views/ExecBoard.vue'), meta: { title: '数据大屏', icon: 'DataBoard' } },
+  // 团队协作屏：上下游依赖 + 阻塞 + 交接（同为独立投屏页）
+  { path: '/teamboard', name: 'teamboard', component: () => import('@/views/Teamboard.vue'), meta: { title: '团队协作屏', icon: 'Connection' } },
   {
     path: '/',
     component: () => import('@/layout/MainLayout.vue'),

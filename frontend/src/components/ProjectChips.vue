@@ -8,7 +8,7 @@ import http from '@/api/http'
  */
 interface Project { id: number; code: string; name: string; lifecycleStatus?: string }
 
-const props = defineProps<{ modelValue: number | null }>()
+const props = defineProps<{ modelValue: number | null; dark?: boolean }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: number): void
   (e: 'change', v: number): void
@@ -32,7 +32,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="project-strip">
+  <div class="project-strip" :class="{ dark: props.dark }">
     <div
       v-for="p in projects"
       :key="p.id"
@@ -55,4 +55,11 @@ onMounted(async () => {
 .project-chip .p-code { font-family: monospace; }
 .project-chip .p-name { color: #606266; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-chip.active .p-name { color: #409eff; }
+
+/* 暗色投屏模式 */
+.dark .project-chip { background: #1c2c49; border-color: #2a3a55; color: #c9d4e8; }
+.dark .project-chip .p-name { color: #8fa2c0; }
+.dark .project-chip:hover { border-color: #3987e5; }
+.dark .project-chip.active { background: rgba(57, 135, 229, .18); border-color: #3987e5; color: #3987e5; box-shadow: 0 0 10px rgba(57, 135, 229, .25); }
+.dark .project-chip.active .p-name { color: #3987e5; }
 </style>
