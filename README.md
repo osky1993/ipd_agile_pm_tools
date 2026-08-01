@@ -40,6 +40,12 @@ npm run dev                                # http://localhost:5173
 演示账号：**admin / admin123**（兼全部角色）。
 接口文档：http://localhost:8080/swagger-ui.html
 
+```bash
+# 4.（可选）造 3 个典型示例项目：EBK 立项早期 / ROBO 开发中期 / PURE 收尾阶段
+#    帮助新用户快速了解业务流程与工具能力，看点见 docs/05-示例项目导览.md
+./deploy/seed_demo_projects.sh
+```
+
 ## 当前进度（对照开发计划里程碑）
 
 已完成并端到端验证：
