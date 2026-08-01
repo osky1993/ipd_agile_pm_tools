@@ -8,11 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class ExecServiceTest {
 
     @Test
-    void 健康度_红线或HIGH为DANGER_MED或未就绪为RISK_否则GOOD() {
-        assertEquals("DANGER", ExecService.health(1, 0, 0, true));
-        assertEquals("DANGER", ExecService.health(0, 2, 0, true));
-        assertEquals("RISK", ExecService.health(0, 0, 3, true));
-        assertEquals("RISK", ExecService.health(0, 0, 0, false));
-        assertEquals("GOOD", ExecService.health(0, 0, 0, true));
+    void 健康度_失控信号DANGER_预警或未就绪RISK_否则GOOD() {
+        // 失控信号（超期类 HIGH / 已评审阶段红线未满足）→ DANGER
+        assertEquals("DANGER", ExecService.health(true, 0, 0, true));
+        // 未评审阶段的红线只体现为 HIGH 预警 → RISK（早期项目不误判红）
+        assertEquals("RISK", ExecService.health(false, 2, 0, true));
+        assertEquals("RISK", ExecService.health(false, 0, 3, true));
+        assertEquals("RISK", ExecService.health(false, 0, 0, false));
+        assertEquals("GOOD", ExecService.health(false, 0, 0, true));
     }
 }

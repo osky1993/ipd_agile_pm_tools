@@ -61,6 +61,15 @@ export const workItemApi = {
   statusHistory: (id: number) => http.get<any, StatusLog[]>(`/work-items/${id}/status-history`),
   audit: (id: number) => http.get<any, AuditEvent[]>(`/work-items/${id}/audit`),
   traces: (id: number) => http.get<any, TraceView[]>(`/work-items/${id}/traces`),
+  search: (q: string) => http.get<any, WorkItem[]>('/work-items/search', { params: { q } }),
+  importCsv: (projectId: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return http.post<any, { created: number; errors: string[] }>('/work-items/import', form, {
+      params: { projectId },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 export const traceApi = {

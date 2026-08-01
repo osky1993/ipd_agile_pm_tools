@@ -46,6 +46,22 @@ function openDetail(row: WorkItem) {
   drawerVisible.value = true
 }
 
+const importVisible = ref(false)
+const importFile = ref<File | null>(null)
+const importResult = ref<{ created: number; errors: string[] } | null>(null)
+
+function onImportFile(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  importFile.value = files && files.length ? files[0] : null
+  importResult.value = null
+}
+async function submitImport() {
+  if (!projectId.value || !importFile.value) return ElMessage.warning('请选择 CSV 文件')
+  importResult.value = await workItemApi.importCsv(projectId.value, importFile.value)
+  ElMessage.success(`已导入 ${importResult.value.created} 条`)
+  await loadList()
+}
+
 async function submitCreate() {
   if (!projectId.value || !createForm.value.title) {
     ElMessage.warning('请填写标题')
@@ -86,8 +102,29 @@ onMounted(async () => {
           <el-radio-button v-for="t in types" :key="t.value" :label="t.value">{{ t.label }}</el-radio-button>
         </el-radio-group>
       </div>
-      <el-button type="primary" @click="createVisible = true"><el-icon><Plus /></el-icon>新建工作项</el-button>
+      <div>
+        <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>导入 CSV</el-button>
+        <el-button type="primary" @click="createVisible = true"><el-icon><Plus /></el-icon>新建工作项</el-button>
+      </div>
     </div>
+
+    <!-- CSV 导入 -->
+    <el-dialog v-model="importVisible" title="CSV 批量导入工作项" width="520px">
+      <p class="hint">列顺序：<b>类型,标题</b>,描述,优先级,验收条件,估算（前两列必填；类型可写枚举名或中文如"需求/任务/缺陷"；UTF-8 编码，首行表头自动跳过）。</p>
+      <input type="file" accept=".csv,text/csv" @change="onImportFile" />
+      <div v-if="importResult" class="imp-result">
+        <el-alert :type="importResult.errors.length ? 'warning' : 'success'" :closable="false" show-icon>
+          成功导入 {{ importResult.created }} 条{{ importResult.errors.length ? `，失败 ${importResult.errors.length} 条` : '' }}
+        </el-alert>
+        <ul v-if="importResult.errors.length" class="imp-errors">
+          <li v-for="(e, i) in importResult.errors" :key="i">{{ e }}</li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" @click="submitImport">导入</el-button>
+      </template>
+    </el-dialog>
 
     <el-table :data="list" v-loading="loading" border stripe @row-click="openDetail" class="clickable">
       <el-table-column prop="code" label="编号" width="140" />
@@ -127,4 +164,7 @@ onMounted(async () => {
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .filters { display: flex; gap: 12px; align-items: center; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
+.hint { color: #909399; font-size: 12px; margin: 0 0 10px; }
+.imp-result { margin-top: 12px; }
+.imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 </style>

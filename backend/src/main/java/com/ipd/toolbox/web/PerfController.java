@@ -26,6 +26,20 @@ public class PerfController {
         return Result.ok(perfService.metrics(projectId));
     }
 
+    /** 全指标趋势序列（每日快照）。 */
+    @GetMapping("/trends")
+    public Result<java.util.Map<String, List<PerfService.TrendPoint>>> trends(
+            @RequestParam Long projectId, @RequestParam(defaultValue = "60") int days) {
+        return Result.ok(perfService.trends(projectId, days));
+    }
+
+    /** 累积流图：每天各状态存量（状态时间线回放）。 */
+    @GetMapping("/cfd")
+    public Result<List<PerfService.CfdPoint>> cfd(@RequestParam Long projectId,
+                                                  @RequestParam(defaultValue = "56") int days) {
+        return Result.ok(perfService.cfd(projectId, days));
+    }
+
     public record TargetReq(Long projectId, String metricKey, Double targetValue) {
     }
 

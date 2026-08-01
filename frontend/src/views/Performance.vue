@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
 import http from '@/api/http'
-import { perfApi, type PerfOverview, type Metric, type Improvement } from '@/api/perf'
+import { perfApi, type PerfOverview, type Metric, type Improvement, type TrendPoint, type CfdPoint } from '@/api/perf'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -37,9 +37,94 @@ const verifyForm = reactive({ resultValue: null as number | null, conclusion: ''
 const weeklyEl = ref<HTMLElement | null>(null)
 const stageEl = ref<HTMLElement | null>(null)
 const typeEl = ref<HTMLElement | null>(null)
+const cfdEl = ref<HTMLElement | null>(null)
 let weeklyChart: echarts.ECharts | null = null
 let stageChart: echarts.ECharts | null = null
 let typeChart: echarts.ECharts | null = null
+let cfdChart: echarts.ECharts | null = null
+
+// 指标趋势弹窗（含改进项前后对比佐证）
+const trendDialog = ref(false)
+const trendKey = ref('')
+const trendImp = ref<Improvement | null>(null)
+const trendEl = ref<HTMLElement | null>(null)
+let trendChart: echarts.ECharts | null = null
+let trendsCache: Record<string, TrendPoint[]> | null = null
+const cfd = ref<CfdPoint[]>([])
+
+/** CFD 阶段色：单色系浅→深（越接近完成越深），面积堆叠完成在下 */
+const CFD_COLORS: Record<string, string> = {
+  Backlog: '#c6dbef', Ready: '#9ecae1', 'In Progress': '#6baed6',
+  Verification: '#3182bd', Accepted: '#0b4c8c',
+}
+const CFD_ORDER = ['Accepted', 'Verification', 'In Progress', 'Ready', 'Backlog']
+
+async function openTrend(key: string, imp?: Improvement) {
+  if (!projectId.value || !key) return
+  if (!trendsCache) trendsCache = await perfApi.trends(projectId.value, 90)
+  trendKey.value = key
+  trendImp.value = imp ?? null
+  trendDialog.value = true
+  await nextTick()
+  renderTrend()
+}
+
+function renderTrend() {
+  if (!trendEl.value) return
+  if (!trendChart) trendChart = echarts.init(trendEl.value)
+  const pts = trendsCache?.[trendKey.value] ?? []
+  const m = allMetrics.value.find((x) => x.key === trendKey.value)
+  const imp = trendImp.value
+  const markLines: object[] = []
+  if (imp?.baselineValue !== null && imp?.baselineValue !== undefined)
+    markLines.push({ yAxis: imp.baselineValue, name: '基线', label: { formatter: '基线 {c}' }, lineStyle: { color: '#909399', type: 'dashed' } })
+  const target = imp?.targetValue ?? m?.target
+  if (target !== null && target !== undefined)
+    markLines.push({ yAxis: target, name: '目标', label: { formatter: '目标 {c}' }, lineStyle: { color: '#67c23a', type: 'dashed' } })
+  const markPoints: object[] = []
+  if (imp?.createdAt) {
+    const d = imp.createdAt.slice(0, 10)
+    if (pts.some((p) => p.date === d)) markPoints.push({ coord: [d, pts.find((p) => p.date === d)?.value], name: '发起改进', value: '发起' })
+  }
+  trendChart.clear()
+  trendChart.setOption({
+    tooltip: { trigger: 'axis', valueFormatter: (v: number | null) => (v === null ? '—' : `${v}${m?.unit ?? ''}`) },
+    grid: { top: 32, left: 44, right: 40, bottom: 28 },
+    xAxis: { type: 'category', data: pts.map((p) => p.date.slice(5)) },
+    yAxis: { type: 'value' },
+    series: [{
+      name: m?.name ?? trendKey.value,
+      type: 'line',
+      connectNulls: true,
+      data: pts.map((p) => p.value),
+      itemStyle: { color: '#409eff' },
+      markLine: { symbol: 'none', data: markLines },
+      markPoint: { data: markPoints, symbolSize: 46, itemStyle: { color: '#e6a23c' } },
+    }],
+  })
+}
+
+function renderCfd() {
+  if (!cfdEl.value || !cfd.value.length) return
+  if (!cfdChart) cfdChart = echarts.init(cfdEl.value)
+  cfdChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { bottom: 0 },
+    grid: { top: 16, left: 36, right: 16, bottom: 36 },
+    xAxis: { type: 'category', boundaryGap: false, data: cfd.value.map((p) => p.date.slice(5)) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: CFD_ORDER.map((s) => ({
+      name: s,
+      type: 'line',
+      stack: 'cfd',
+      areaStyle: { color: CFD_COLORS[s] },
+      lineStyle: { width: 1, color: CFD_COLORS[s] },
+      itemStyle: { color: CFD_COLORS[s] },
+      showSymbol: false,
+      data: cfd.value.map((p) => p.byStatus[s] ?? 0),
+    })),
+  })
+}
 
 const IMP_FLOW = ['OPEN', 'DOING', 'DONE', 'VERIFIED']
 const IMP_LABEL: Record<string, string> = { OPEN: '待启动', DOING: '进行中', DONE: '已落地', VERIFIED: '已验证' }
@@ -68,12 +153,15 @@ const fmt = (m: Metric) => (m.value === null ? '—' : `${m.value}${m.unit}`)
 
 async function load() {
   if (!projectId.value) return
-  ;[overview.value, improvements.value] = await Promise.all([
+  trendsCache = null
+  ;[overview.value, improvements.value, cfd.value] = await Promise.all([
     perfApi.metrics(projectId.value),
     perfApi.improvements(projectId.value),
+    perfApi.cfd(projectId.value),
   ])
   await nextTick()
   renderCharts()
+  renderCfd()
 }
 
 function renderCharts() {
@@ -240,7 +328,11 @@ onMounted(async () => {
                 </template>
                 <el-table :data="treeData(g.metrics)" size="small" row-key="key"
                   :tree-props="{ children: 'children' }" :show-header="false">
-                  <el-table-column prop="name" label="指标" min-width="150" />
+                  <el-table-column label="指标" min-width="150">
+                    <template #default="{ row }">
+                      <span class="m-name" title="点击查看趋势" @click="openTrend(row.key)">{{ row.name }}</span>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="当前" width="72" align="right">
                     <template #default="{ row }"><b>{{ fmt(row) }}</b></template>
                   </el-table-column>
@@ -279,6 +371,11 @@ onMounted(async () => {
             <el-col :span="8"><el-card shadow="never"><template #header><b>阶段平均停留（天）</b></template><div ref="stageEl" class="chart" /></el-card></el-col>
             <el-col :span="8"><el-card shadow="never"><template #header><b>近4周吞吐按类型</b></template><div ref="typeEl" class="chart" /></el-card></el-col>
           </el-row>
+
+          <el-card shadow="never" class="crow">
+            <template #header><b>累积流图（CFD · 近 8 周各状态存量）</b>——面积平行说明流动顺畅；某层持续变厚即该阶段在堆积</template>
+            <div ref="cfdEl" class="cfd-chart" />
+          </el-card>
 
           <el-card shadow="never" class="crow" v-if="overview.charts.staleTop.length">
             <template #header><b>停滞工作项 TOP{{ overview.charts.staleTop.length }}</b>（按最后状态变更距今天数）</template>
@@ -327,8 +424,9 @@ onMounted(async () => {
               <el-tag size="small" :type="IMP_TAG[row.status]">{{ IMP_LABEL[row.status] }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="170">
+          <el-table-column label="操作" width="220">
             <template #default="{ row }">
+              <el-button v-if="row.metricKey" link size="small" @click="openTrend(row.metricKey, row)">趋势</el-button>
               <el-button v-if="nextStatus(row)" link type="primary" size="small" @click="advance(row)">
                 {{ nextStatus(row) === 'VERIFIED' ? '验证效果' : '推进→' + IMP_LABEL[nextStatus(row)!] }}
               </el-button>
@@ -363,6 +461,13 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <!-- 指标趋势（含改进前后对比） -->
+    <el-dialog v-model="trendDialog" :title="`趋势：${metricName(trendKey)}${trendImp ? '（改进 ' + trendImp.code + ' 佐证）' : ''}`" width="720px" destroy-on-close @opened="renderTrend">
+      <div ref="trendEl" class="trend-dlg-chart" />
+      <p v-if="trendImp" class="hint">虚线为改进基线/目标；曲线为该指标每日快照（打开效能页即记录当天）。改进 {{ trendImp.status === 'VERIFIED' ? `已验证：实际 ${trendImp.resultValue}` : '进行中' }}。</p>
+      <p v-else class="hint">曲线为每日快照，历史随使用累积；缺快照的日期为断点。</p>
+    </el-dialog>
+
     <!-- 验证效果 -->
     <el-dialog v-model="verifyDialog" :title="`验证改进效果：${verifyImp?.code ?? ''}`" width="460px">
       <el-form label-width="84px">
@@ -391,6 +496,10 @@ onMounted(async () => {
 .target.editable { color: #409eff; cursor: pointer; text-decoration: underline dotted; }
 .crow { margin-bottom: 12px; }
 .chart { height: 200px; }
+.cfd-chart { height: 260px; }
+.trend-dlg-chart { height: 320px; }
+.m-name { cursor: pointer; }
+.m-name:hover { color: #409eff; text-decoration: underline dotted; }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 .stale-days { color: #e6a23c; font-weight: 600; }
 .sub-bar { display: flex; justify-content: space-between; margin-bottom: 12px; }

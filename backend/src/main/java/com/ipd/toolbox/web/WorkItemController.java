@@ -39,6 +39,21 @@ public class WorkItemController {
         return Result.ok(service.tree(projectId));
     }
 
+    /** 全局搜索（编号/标题模糊，跨项目，最多 20 条）。 */
+    @GetMapping("/search")
+    public Result<List<WorkItem>> search(@RequestParam String q) {
+        return Result.ok(service.search(q));
+    }
+
+    /** CSV 批量导入（列：类型,标题,描述,优先级,验收条件,估算）。 */
+    @PostMapping("/import")
+    public Result<java.util.Map<String, Object>> importCsv(
+            @RequestParam Long projectId,
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file) throws java.io.IOException {
+        return Result.ok(service.importCsv(projectId,
+                new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
     @GetMapping("/{id}")
     public Result<WorkItem> get(@PathVariable Long id) {
         return Result.ok(service.get(id));

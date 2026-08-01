@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Iteration;
+import com.ipd.toolbox.domain.entity.IterationCommitment;
 import com.ipd.toolbox.domain.entity.MetricTarget;
+import com.ipd.toolbox.domain.entity.PerfSnapshot;
 import com.ipd.toolbox.domain.entity.WorkItem;
 import com.ipd.toolbox.domain.enums.WorkItemType;
 import com.ipd.toolbox.mapper.*;
@@ -107,21 +109,27 @@ public class PerfService {
     private final MetricTargetMapper targetMapper;
     private final IterationMapper iterationMapper;
     private final WorkItemMapper workItemMapper;
+    private final PerfSnapshotMapper snapshotMapper;
+    private final IterationCommitmentMapper commitmentMapper;
     private final AuditService audit;
     private final ObjectMapper objectMapper;
 
     public PerfService(PerfMapper perfMapper, MetricsMapper metricsMapper, MetricTargetMapper targetMapper,
                        IterationMapper iterationMapper, WorkItemMapper workItemMapper,
+                       PerfSnapshotMapper snapshotMapper, IterationCommitmentMapper commitmentMapper,
                        AuditService audit, ObjectMapper objectMapper) {
         this.perfMapper = perfMapper;
         this.metricsMapper = metricsMapper;
         this.targetMapper = targetMapper;
         this.iterationMapper = iterationMapper;
         this.workItemMapper = workItemMapper;
+        this.snapshotMapper = snapshotMapper;
+        this.commitmentMapper = commitmentMapper;
         this.audit = audit;
         this.objectMapper = objectMapper;
     }
 
+    @Transactional
     public PerfOverview metrics(Long projectId) {
         Map<String, Object> pm = metricsMapper.projectMetrics(projectId);
         if (pm == null) {
@@ -129,6 +137,7 @@ public class PerfService {
         }
         LocalDate today = LocalDate.now();
         Map<String, Double> values = computeValues(projectId, pm, today);
+        snapshotToday(projectId, today, values);
         Map<String, Double> targets = loadTargets(projectId);
 
         Map<String, List<Metric>> byGroup = new LinkedHashMap<>();
@@ -188,6 +197,92 @@ public class PerfService {
                 v, targetValue, status(d.direction(), v, targetValue));
     }
 
+    /** 全指标每日快照 upsert（同日重复读取只刷新数值），支撑趋势与改进前后对比。 */
+    private void snapshotToday(Long projectId, LocalDate today, Map<String, Double> values) {
+        Map<String, PerfSnapshot> existing = new HashMap<>();
+        for (PerfSnapshot s : snapshotMapper.selectList(new QueryWrapper<PerfSnapshot>()
+                .eq("project_id", projectId).eq("snap_date", today))) {
+            existing.put(s.getMetricKey(), s);
+        }
+        for (MetricDef d : REGISTRY) {
+            Double v = values.get(d.key());
+            PerfSnapshot s = existing.get(d.key());
+            BigDecimal val = v == null ? null : BigDecimal.valueOf(v);
+            if (s == null) {
+                s = new PerfSnapshot();
+                s.setProjectId(projectId);
+                s.setSnapDate(today);
+                s.setMetricKey(d.key());
+                s.setValue(val);
+                snapshotMapper.insert(s);
+            } else if (!Objects.equals(s.getValue() == null ? null : s.getValue().doubleValue(), v)) {
+                s.setValue(val);
+                snapshotMapper.updateById(s);
+            }
+        }
+    }
+
+    public record TrendPoint(String date, Double value) {
+    }
+
+    /** 全指标趋势序列（按 key 分组），来自每日快照。 */
+    public Map<String, List<TrendPoint>> trends(Long projectId, int days) {
+        LocalDate start = LocalDate.now().minusDays(Math.min(Math.max(days, 1), 365) - 1L);
+        Map<String, List<TrendPoint>> out = new LinkedHashMap<>();
+        for (PerfSnapshot s : snapshotMapper.selectList(new QueryWrapper<PerfSnapshot>()
+                .eq("project_id", projectId).ge("snap_date", start)
+                .orderByAsc("snap_date"))) {
+            out.computeIfAbsent(s.getMetricKey(), k -> new ArrayList<>())
+                    .add(new TrendPoint(s.getSnapDate().toString(),
+                            s.getValue() == null ? null : s.getValue().doubleValue()));
+        }
+        return out;
+    }
+
+    public record CfdPoint(String date, Map<String, Integer> byStatus) {
+    }
+
+    /** 累积流图（CFD）：由状态时间线回放，每天结束时各状态的存量（通用工作项）。 */
+    public List<CfdPoint> cfd(Long projectId, int days) {
+        return replayCfd(perfMapper.genericStatusLogs(projectId), LocalDate.now(),
+                Math.min(Math.max(days, 7), 365));
+    }
+
+    static final List<String> CFD_STAGES = List.of("Backlog", "Ready", "In Progress", "Verification", "Accepted");
+
+    static List<CfdPoint> replayCfd(List<Map<String, Object>> logs, LocalDate today, int days) {
+        // item -> 按时间排好的 (at, toStatus)
+        Map<Long, List<Map.Entry<LocalDateTime, String>>> byItem = new LinkedHashMap<>();
+        for (Map<String, Object> r : logs) {
+            Long item = ((Number) r.get("work_item_id")).longValue();
+            LocalDateTime at = toLdt(r.get("at"));
+            byItem.computeIfAbsent(item, k -> new ArrayList<>())
+                    .add(Map.entry(at, String.valueOf(r.get("to_status"))));
+        }
+        List<CfdPoint> out = new ArrayList<>();
+        LocalDate start = today.minusDays(days - 1L);
+        for (LocalDate d = start; !d.isAfter(today); d = d.plusDays(1)) {
+            LocalDateTime endOfDay = d.plusDays(1).atStartOfDay();
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            CFD_STAGES.forEach(s -> counts.put(s, 0));
+            for (List<Map.Entry<LocalDateTime, String>> events : byItem.values()) {
+                String status = null;
+                for (Map.Entry<LocalDateTime, String> e : events) {
+                    if (e.getKey().isBefore(endOfDay)) {
+                        status = e.getValue();
+                    } else {
+                        break;
+                    }
+                }
+                if (status != null && counts.containsKey(status)) {
+                    counts.merge(status, 1, Integer::sum);
+                }
+            }
+            out.add(new CfdPoint(d.toString(), counts));
+        }
+        return out;
+    }
+
     // ---------- 指标计算 ----------
 
     private Map<String, Double> computeValues(Long projectId, Map<String, Object> pm, LocalDate today) {
@@ -196,17 +291,25 @@ public class PerfService {
 
         // 交付速率
         v.put("delivery.throughput4w", (double) perfMapper.acceptedSince(projectId, since4w));
+        // 承诺口径：以承诺快照为分母（拉入即承诺、移出不减），修正乐观偏差
         Iteration commitIt = pickCommitIteration(iterationMapper.selectList(new QueryWrapper<Iteration>()
                 .eq("project_id", projectId)));
         if (commitIt != null) {
-            List<WorkItem> items = workItemMapper.selectList(new QueryWrapper<WorkItem>()
-                    .eq("iteration_id", commitIt.getId()));
-            v.put("delivery.commitRateCount", rate(items.stream().filter(w -> "Accepted".equals(w.getStatus())).count(),
-                    items.size()));
-            double committedPts = items.stream().mapToDouble(w -> parsePoints(w.getEstimate())).sum();
-            double donePts = items.stream().filter(w -> "Accepted".equals(w.getStatus()))
-                    .mapToDouble(w -> parsePoints(w.getEstimate())).sum();
-            v.put("delivery.commitRatePoints", committedPts == 0 ? null : round1(donePts * 100.0 / committedPts));
+            List<IterationCommitment> commits = commitmentMapper.selectList(
+                    new QueryWrapper<IterationCommitment>().eq("iteration_id", commitIt.getId()));
+            if (!commits.isEmpty()) {
+                Map<Long, WorkItem> items = new HashMap<>();
+                for (WorkItem w : workItemMapper.selectBatchIds(
+                        commits.stream().map(IterationCommitment::getWorkItemId).toList())) {
+                    items.put(w.getId(), w);
+                }
+                long done = commits.stream().filter(c -> isAccepted(items.get(c.getWorkItemId()))).count();
+                v.put("delivery.commitRateCount", rate(done, commits.size()));
+                double committedPts = commits.stream().mapToDouble(c -> parsePoints(c.getEstimateSnap())).sum();
+                double donePts = commits.stream().filter(c -> isAccepted(items.get(c.getWorkItemId())))
+                        .mapToDouble(c -> parsePoints(c.getEstimateSnap())).sum();
+                v.put("delivery.commitRatePoints", committedPts == 0 ? null : round1(donePts * 100.0 / committedPts));
+            }
         }
 
         // 周期时间
@@ -296,6 +399,10 @@ public class PerfService {
                         .thenComparing(Iteration::getId))
                 .orElseGet(() -> all.stream().filter(i -> "ACTIVE".equals(i.getStatus()))
                         .max(Comparator.comparing(Iteration::getId)).orElse(null));
+    }
+
+    private static boolean isAccepted(WorkItem w) {
+        return w != null && "Accepted".equals(w.getStatus());
     }
 
     /** 估算点解析：数字字符串→数值，非数字/空按 0 计（容错，绝不抛错）。 */

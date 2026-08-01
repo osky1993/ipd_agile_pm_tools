@@ -56,6 +56,99 @@ public class WorkItemService {
                            String priority, List<TreeNode> children) {
     }
 
+    /** 全局搜索：按编号/标题模糊匹配，跨项目，最多 20 条（最新在前）。 */
+    public List<WorkItem> search(String q) {
+        if (q == null || q.isBlank()) {
+            return List.of();
+        }
+        String kw = q.trim();
+        return mapper.selectList(new QueryWrapper<WorkItem>()
+                .and(w -> w.like("code", kw).or().like("title", kw))
+                .orderByDesc("id").last("LIMIT 20"));
+    }
+
+    /**
+     * CSV 批量导入（逐行走 create：编号生成/初始状态/审计全部生效）。
+     * 列：类型,标题,描述,优先级,验收条件,估算（前两列必填；类型为 REQUIREMENT/STORY/TASK 等枚举名或中文标签）。
+     */
+    @Transactional
+    public Map<String, Object> importCsv(Long projectId, String csv) {
+        UserContext.requireRole("PM");
+        int created = 0;
+        List<String> errors = new ArrayList<>();
+        List<String> lines = csv.lines().filter(l -> !l.isBlank()).toList();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).replace("﻿", "");
+            List<String> cols = parseCsvLine(line);
+            if (i == 0 && !cols.isEmpty() && (cols.get(0).contains("类型") || cols.get(0).equalsIgnoreCase("type"))) {
+                continue; // 表头
+            }
+            try {
+                if (cols.size() < 2 || cols.get(1).isBlank()) {
+                    throw new BusinessException("至少需要 类型,标题 两列");
+                }
+                WorkItem w = new WorkItem();
+                w.setProjectId(projectId);
+                w.setType(resolveType(cols.get(0)).name());
+                w.setTitle(cols.get(1).trim());
+                if (cols.size() > 2 && !cols.get(2).isBlank()) w.setDescription(cols.get(2));
+                if (cols.size() > 3 && !cols.get(3).isBlank()) w.setPriority(cols.get(3).trim());
+                if (cols.size() > 4 && !cols.get(4).isBlank()) w.setAcceptanceCriteria(cols.get(4));
+                if (cols.size() > 5 && !cols.get(5).isBlank()) w.setEstimate(cols.get(5).trim());
+                create(w, null);
+                created++;
+            } catch (Exception e) {
+                errors.add("第 " + (i + 1) + " 行: " + e.getMessage());
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("created", created);
+        out.put("errors", errors);
+        return out;
+    }
+
+    /** 类型解析：枚举名或中文标签均可。 */
+    static WorkItemType resolveType(String s) {
+        String t = s == null ? "" : s.trim();
+        for (WorkItemType wt : WorkItemType.values()) {
+            if (wt.name().equalsIgnoreCase(t) || wt.label().equals(t) || wt.abbr().equalsIgnoreCase(t)) {
+                return wt;
+            }
+        }
+        throw new BusinessException("未知类型: " + s);
+    }
+
+    /** 极简 CSV 行解析：支持双引号包裹（含逗号/转义引号）。 */
+    static List<String> parseCsvLine(String line) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (quoted) {
+                if (c == '"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                        cur.append('"');
+                        i++;
+                    } else {
+                        quoted = false;
+                    }
+                } else {
+                    cur.append(c);
+                }
+            } else if (c == '"') {
+                quoted = true;
+            } else if (c == ',') {
+                out.add(cur.toString());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        out.add(cur.toString());
+        return out;
+    }
+
     public List<WorkItem> list(Long projectId, String type) {
         QueryWrapper<WorkItem> qw = new QueryWrapper<WorkItem>().eq("project_id", projectId);
         if (type != null && !type.isBlank()) {

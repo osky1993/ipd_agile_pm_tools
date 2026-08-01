@@ -80,8 +80,22 @@ export interface Alert {
   due: string | null
 }
 
+export interface TrendPoint {
+  date: string
+  value: number | null
+}
+
+export interface CfdPoint {
+  date: string
+  byStatus: Record<string, number>
+}
+
 export const perfApi = {
   metrics: (projectId: number) => http.get<any, PerfOverview>('/perf/metrics', { params: { projectId } }),
+  trends: (projectId: number, days = 60) =>
+    http.get<any, Record<string, TrendPoint[]>>('/perf/trends', { params: { projectId, days } }),
+  cfd: (projectId: number, days = 56) =>
+    http.get<any, CfdPoint[]>('/perf/cfd', { params: { projectId, days } }),
   setTarget: (projectId: number, metricKey: string, targetValue: number | null) =>
     http.put<any, Metric>('/perf/target', { projectId, metricKey, targetValue }),
   improvements: (projectId: number, status?: string) =>

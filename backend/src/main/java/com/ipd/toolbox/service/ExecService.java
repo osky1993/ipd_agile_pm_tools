@@ -50,12 +50,14 @@ public class ExecService {
     private final DecisionMapper decisionMapper;
     private final IterationMapper iterationMapper;
     private final ImprovementMapper improvementMapper;
+    private final GateCriterionMapper criterionMapper;
     private final AlertService alertService;
     private final ReadinessService readinessService;
 
     public ExecService(ProjectMapper projectMapper, MetricsMapper metricsMapper, PerfMapper perfMapper,
                        StageGateMapper stageGateMapper, DecisionMapper decisionMapper,
                        IterationMapper iterationMapper, ImprovementMapper improvementMapper,
+                       GateCriterionMapper criterionMapper,
                        AlertService alertService, ReadinessService readinessService) {
         this.projectMapper = projectMapper;
         this.metricsMapper = metricsMapper;
@@ -64,6 +66,7 @@ public class ExecService {
         this.decisionMapper = decisionMapper;
         this.iterationMapper = iterationMapper;
         this.improvementMapper = improvementMapper;
+        this.criterionMapper = criterionMapper;
         this.alertService = alertService;
         this.readinessService = readinessService;
     }
@@ -110,10 +113,15 @@ public class ExecService {
 
             Map<String, Object> rl = perfMapper.redlineStats(p.getId());
             long redlineUnmet = num(rl.get("total")) - num(rl.get("satisfied"));
+            // 红线是否已"进入评审"（所属 gate 有过决策）：未评审阶段的红线未满足属正常推进中，不判红
+            boolean redlineInReviewedGate = redlineUnmet > 0 && hasReviewedUnmetRedline(p.getId());
 
             List<AlertService.Alert> alerts = alertService.list(p.getId());
             long high = alerts.stream().filter(a -> "HIGH".equals(a.severity())).count();
             long med = alerts.stream().filter(a -> "MED".equals(a.severity())).count();
+            // 超期类 HIGH（风险超期/承诺过期）比"红线尚未满足"更接近失控信号
+            boolean overdueHigh = alerts.stream().anyMatch(a -> "HIGH".equals(a.severity())
+                    && ("RISK_OVERDUE".equals(a.type()) || "COMMITMENT_DUE".equals(a.type())));
             alertHighSum += high;
             alertMedSum += med;
             for (AlertService.Alert a : alerts) {
@@ -137,7 +145,8 @@ public class ExecService {
                     lastDcp == null || lastDcp.getDecidedAt() == null ? null
                             : lastDcp.getDecidedAt().toLocalDate().toString(),
                     rt, ra, passRate, od, pc, redlineUnmet, ready, high, med,
-                    throughput, leadP85, health(redlineUnmet, high, med, ready)));
+                    throughput, leadP85,
+                    health(overdueHigh || redlineInReviewedGate, high, med, ready)));
 
             // 每项目 8 周吞吐
             Map<LocalDate, Long> byDay = new HashMap<>();
@@ -185,15 +194,39 @@ public class ExecService {
         return new Overview(summary, cards, weeks, topAlerts);
     }
 
-    /** 健康度：红线未满足或 HIGH 预警 → DANGER；MED 预警或整机未就绪 → RISK；否则 GOOD。 */
-    static String health(long redlineUnmet, long alertHigh, long alertMed, boolean ready) {
-        if (redlineUnmet > 0 || alertHigh > 0) {
+    /**
+     * 健康度：失控信号（超期类 HIGH / 已评审阶段仍红线未满足）→ DANGER；
+     * 其余 HIGH/MED 预警或整机未就绪 → RISK；否则 GOOD。
+     * 未进入评审的阶段红线未满足属正常推进中，不判红（避免早期项目误报）。
+     */
+    static String health(boolean dangerSignal, long alertHigh, long alertMed, boolean ready) {
+        if (dangerSignal) {
             return "DANGER";
         }
-        if (alertMed > 0 || !ready) {
+        if (alertHigh > 0 || alertMed > 0 || !ready) {
             return "RISK";
         }
         return "GOOD";
+    }
+
+    /** 是否存在"所属 gate 已有决策记录"的未满足红线。 */
+    private boolean hasReviewedUnmetRedline(Long projectId) {
+        List<com.ipd.toolbox.domain.entity.GateCriterion> unmet = criterionMapperUnmetRedlines(projectId);
+        if (unmet.isEmpty()) {
+            return false;
+        }
+        Set<Long> reviewedGates = new HashSet<>();
+        for (Decision d : decisionMapper.selectList(new QueryWrapper<Decision>()
+                .eq("project_id", projectId).eq("subject_type", "STAGE_GATE"))) {
+            reviewedGates.add(d.getSubjectId());
+        }
+        return unmet.stream().anyMatch(c -> c.getStageGateId() != null
+                && reviewedGates.contains(c.getStageGateId()));
+    }
+
+    private List<com.ipd.toolbox.domain.entity.GateCriterion> criterionMapperUnmetRedlines(Long projectId) {
+        return criterionMapper.selectList(new QueryWrapper<com.ipd.toolbox.domain.entity.GateCriterion>()
+                .eq("project_id", projectId).eq("is_redline", 1).notIn("status", "MET", "WAIVED"));
     }
 
     private static long num(Object o) {

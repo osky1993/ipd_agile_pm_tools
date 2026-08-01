@@ -36,7 +36,8 @@ class AlertServiceTest {
         PerfMapper perfMapper = mock(PerfMapper.class);
         PerfService perfService = new PerfService(perfMapper, mock(MetricsMapper.class),
                 mock(MetricTargetMapper.class), mock(IterationMapper.class),
-                mock(WorkItemMapper.class), mock(AuditService.class), new ObjectMapper());
+                mock(WorkItemMapper.class), mock(PerfSnapshotMapper.class),
+                mock(IterationCommitmentMapper.class), mock(AuditService.class), new ObjectMapper());
         service = new AlertService(projectMapper, workItemMapper, decisionMapper,
                 criterionMapper, perfMapper, perfService);
     }

@@ -128,6 +128,31 @@ class PerfServiceTest {
         assertNull(svc.riskOnTimeRate(List.of(future), today)); // 无到期风险 → null
     }
 
+    @Test
+    void 累积流图回放_每天各状态存量_验收累积() {
+        LocalDate today = LocalDate.of(2026, 8, 1);
+        // item1：7-29 Backlog → 7-30 Ready → 8-01 Accepted；item2：7-31 Backlog
+        List<Map<String, Object>> logs = List.of(
+                log2(1L, "Backlog", "2026-07-29T10:00:00"),
+                log2(1L, "Ready", "2026-07-30T10:00:00"),
+                log2(1L, "Accepted", "2026-08-01T10:00:00"),
+                log2(2L, "Backlog", "2026-07-31T09:00:00"));
+        List<PerfService.CfdPoint> cfd = PerfService.replayCfd(logs, today, 4);
+
+        assertEquals(4, cfd.size());
+        assertEquals("2026-07-29", cfd.get(0).date());
+        assertEquals(1, cfd.get(0).byStatus().get("Backlog"));       // 仅 item1 在 Backlog
+        assertEquals(1, cfd.get(1).byStatus().get("Ready"));          // 7-30 item1 到 Ready
+        assertEquals(1, cfd.get(2).byStatus().get("Backlog"));        // 7-31 item2 出现
+        assertEquals(1, cfd.get(2).byStatus().get("Ready"));
+        assertEquals(1, cfd.get(3).byStatus().get("Accepted"));       // 8-01 item1 验收
+        assertEquals(1, cfd.get(3).byStatus().get("Backlog"));
+    }
+
+    private Map<String, Object> log2(Long itemId, String toStatus, String at) {
+        return log(itemId, toStatus, at);
+    }
+
     // ---------- 目标管理 ----------
 
     @Test
@@ -183,7 +208,11 @@ class PerfServiceTest {
 
     private PerfService svc(PerfMapper pm, MetricsMapper mm, MetricTargetMapper tm,
                             IterationMapper im, WorkItemMapper wm) {
-        return new PerfService(pm, mm, tm, im, wm, mock(AuditService.class), new ObjectMapper());
+        PerfSnapshotMapper ps = mock(PerfSnapshotMapper.class);
+        when(ps.selectList(any(Wrapper.class))).thenReturn(List.of());
+        IterationCommitmentMapper ic = mock(IterationCommitmentMapper.class);
+        when(ic.selectList(any(Wrapper.class))).thenReturn(List.of());
+        return new PerfService(pm, mm, tm, im, wm, ps, ic, mock(AuditService.class), new ObjectMapper());
     }
 
     /** 让 metrics()/currentValue() 在空数据下可跑通。 */

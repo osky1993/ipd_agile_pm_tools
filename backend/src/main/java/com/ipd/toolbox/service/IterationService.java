@@ -23,14 +23,18 @@ public class IterationService {
     private final IterationMapper mapper;
     private final ProjectMapper projectMapper;
     private final WorkItemMapper workItemMapper;
+    private final com.ipd.toolbox.mapper.IterationCommitmentMapper commitmentMapper;
     private final CodeGenerator codeGenerator;
     private final AuditService audit;
 
     public IterationService(IterationMapper mapper, ProjectMapper projectMapper,
-                            WorkItemMapper workItemMapper, CodeGenerator codeGenerator, AuditService audit) {
+                            WorkItemMapper workItemMapper,
+                            com.ipd.toolbox.mapper.IterationCommitmentMapper commitmentMapper,
+                            CodeGenerator codeGenerator, AuditService audit) {
         this.mapper = mapper;
         this.projectMapper = projectMapper;
         this.workItemMapper = workItemMapper;
+        this.commitmentMapper = commitmentMapper;
         this.codeGenerator = codeGenerator;
         this.audit = audit;
     }
@@ -113,6 +117,19 @@ public class IterationService {
         wi.setUpdatedBy(UserContext.currentUserId());
         wi.setUpdatedAt(LocalDateTime.now());
         workItemMapper.updateById(wi);
+        // 承诺快照：拉入即承诺（只增不删），承诺完成率以此为分母
+        Long existing = commitmentMapper.selectCount(
+                new QueryWrapper<com.ipd.toolbox.domain.entity.IterationCommitment>()
+                        .eq("iteration_id", iterationId).eq("work_item_id", workItemId));
+        if (existing == null || existing == 0) {
+            com.ipd.toolbox.domain.entity.IterationCommitment c =
+                    new com.ipd.toolbox.domain.entity.IterationCommitment();
+            c.setIterationId(iterationId);
+            c.setWorkItemId(workItemId);
+            c.setEstimateSnap(wi.getEstimate());
+            c.setCommittedAt(LocalDateTime.now());
+            commitmentMapper.insert(c);
+        }
         audit.record(wi.getProjectId(), "WORK_ITEM", workItemId, "UPDATE",
                 wi.getCode() + " 拉入迭代 " + it.getCode(), null, null);
     }
