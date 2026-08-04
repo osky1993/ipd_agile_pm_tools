@@ -81,6 +81,37 @@ export const workItemApi = {
   },
 }
 
+export interface BatchItemResult {
+  id: number
+  code: string | null
+  ok: boolean
+  message: string
+}
+
+export const batchApi = {
+  /** 批量操作：TRANSITION | UPDATE | ASSIGN_ITERATION，逐条返回成败 */
+  execute: (req: {
+    ids: number[]
+    action: 'TRANSITION' | 'UPDATE' | 'ASSIGN_ITERATION'
+    toStatus?: string
+    reason?: string
+    iterationId?: number
+    patch?: { ownerId?: number | null; priority?: string | null }
+  }) => http.post<any, BatchItemResult[]>('/work-items/batch', req),
+}
+
+export const riskChangeExcelApi = {
+  templateUrl: (type: 'RISK' | 'CHANGE') => `/api/work-items/import-excel-template.xlsx?type=${type}`,
+  importExcel: (projectId: number, type: 'RISK' | 'CHANGE', file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return http.post<any, { created: number; errors: string[] }>('/work-items/import-excel', form, {
+      params: { projectId, type },
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+}
+
 export const traceApi = {
   create: (data: {
     projectId: number

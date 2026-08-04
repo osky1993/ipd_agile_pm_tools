@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { evidenceApi, decisionApi, type Evidence, type Decision } from '@/api/governance'
 import { metricsApi, type MatrixRow } from '@/api/metrics'
-import { workItemApi, type WorkItem } from '@/api/workitem'
+import { workItemApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
 import { statusLabel, decisionLabel, decisionTypeLabel, testResultLabel } from '@/utils/labels'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
@@ -21,6 +21,22 @@ const currentId = ref<number | null>(null)
 
 const riskDialog = ref(false)
 const riskForm = reactive({ title: '', ownerId: undefined as number | undefined, mitigation: '', dueDate: '' })
+
+// 风险 Excel 导入
+const riskImportDialog = ref(false)
+const riskImportFile = ref<File | null>(null)
+const riskImportResult = ref<{ created: number; errors: string[] } | null>(null)
+function onRiskImportFile(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  riskImportFile.value = files && files.length ? files[0] : null
+  riskImportResult.value = null
+}
+async function submitRiskImport() {
+  if (!projectId.value || !riskImportFile.value) return ElMessage.warning('请选择 Excel 文件')
+  riskImportResult.value = await riskChangeExcelApi.importExcel(projectId.value, 'RISK', riskImportFile.value)
+  ElMessage.success(`已导入 ${riskImportResult.value.created} 条`)
+  await loadAll()
+}
 const uploadDialog = ref(false)
 const uploadFile = ref<File | null>(null)
 
@@ -126,7 +142,30 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
       <!-- 风险 -->
       <el-tab-pane name="risk">
         <template #label>风险 ({{ risks.length }})<el-badge v-if="overdueCount" :value="overdueCount" class="badge" type="danger" /></template>
-        <div class="sub-bar"><el-button type="primary" size="small" @click="riskDialog = true"><el-icon><Plus /></el-icon>登记风险</el-button></div>
+        <div class="sub-bar">
+          <el-button type="primary" size="small" @click="riskDialog = true"><el-icon><Plus /></el-icon>登记风险</el-button>
+          <el-button size="small" @click="riskImportDialog = true"><el-icon><Upload /></el-icon>Excel 导入</el-button>
+        </div>
+        <!-- 风险 Excel 导入 -->
+        <el-dialog v-model="riskImportDialog" title="风险 Excel 导入" width="520px">
+          <p class="hint">
+            列：<b>标题(必填)</b>、说明、优先级、责任人ID、处置措施、处置期限(yyyy-MM-dd)。
+            <a :href="riskChangeExcelApi.templateUrl('RISK')" style="margin-left:6px">⬇ 下载模板</a>
+          </p>
+          <input type="file" accept=".xlsx" @change="onRiskImportFile" />
+          <div v-if="riskImportResult" style="margin-top:12px">
+            <el-alert :type="riskImportResult.errors.length ? 'warning' : 'success'" :closable="false" show-icon>
+              成功导入 {{ riskImportResult.created }} 条{{ riskImportResult.errors.length ? `，失败 ${riskImportResult.errors.length} 条` : '' }}
+            </el-alert>
+            <ul v-if="riskImportResult.errors.length" class="imp-errors">
+              <li v-for="(e, i) in riskImportResult.errors" :key="i">{{ e }}</li>
+            </ul>
+          </div>
+          <template #footer>
+            <el-button @click="riskImportDialog = false">关闭</el-button>
+            <el-button type="primary" @click="submitRiskImport">导入</el-button>
+          </template>
+        </el-dialog>
         <el-table :data="risks" border @row-click="openRisk" class="clickable">
           <el-table-column prop="code" label="编号" width="130" />
           <el-table-column prop="title" label="风险" show-overflow-tooltip />
@@ -247,4 +286,5 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
 .pv-pdf { width: 100%; height: 70vh; border: none; }
 .hint { color: #909399; font-size: 12px; margin-top: 10px; }
 .badge { margin-left: 6px; }
+.imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 </style>

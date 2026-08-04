@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { testApi, type TestCase, type TestRun } from '@/api/agile'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { changeApi, type ImpactItem } from '@/api/governance'
-import { workItemApi, type WorkItem } from '@/api/workitem'
+import { workItemApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
 import { statusLabel, testResultLabel, caseStatusLabel } from '@/utils/labels'
@@ -105,6 +105,22 @@ async function loadAll() {
 // 新建变更：先填表单，确认才创建（不再点开即建）
 const changeDialog = ref(false)
 const changeForm = reactive({ title: '', description: '' })
+
+// 变更 Excel 导入
+const chgImportDialog = ref(false)
+const chgImportFile = ref<File | null>(null)
+const chgImportResult = ref<{ created: number; errors: string[] } | null>(null)
+function onChgImportFile(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  chgImportFile.value = files && files.length ? files[0] : null
+  chgImportResult.value = null
+}
+async function submitChgImport() {
+  if (!projectId.value || !chgImportFile.value) return ElMessage.warning('请选择 Excel 文件')
+  chgImportResult.value = await riskChangeExcelApi.importExcel(projectId.value, 'CHANGE', chgImportFile.value)
+  ElMessage.success(`已导入 ${chgImportResult.value.created} 条`)
+  await loadAll()
+}
 
 function openCreateChange() {
   changeForm.title = ''
@@ -308,7 +324,30 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
       </el-tab-pane>
 
       <el-tab-pane :label="`变更 (${changes.length})`" name="changes">
-        <div class="sub-bar"><el-button type="primary" size="small" @click="openCreateChange"><el-icon><Plus /></el-icon>新建变更</el-button></div>
+        <div class="sub-bar">
+          <el-button type="primary" size="small" @click="openCreateChange"><el-icon><Plus /></el-icon>新建变更</el-button>
+          <el-button size="small" @click="chgImportDialog = true"><el-icon><Upload /></el-icon>Excel 导入</el-button>
+        </div>
+        <!-- 变更 Excel 导入 -->
+        <el-dialog v-model="chgImportDialog" title="变更 Excel 导入" width="500px">
+          <p class="hint">
+            列：<b>标题(必填)</b>、说明、优先级。
+            <a :href="riskChangeExcelApi.templateUrl('CHANGE')" style="margin-left:6px">⬇ 下载模板</a>
+          </p>
+          <input type="file" accept=".xlsx" @change="onChgImportFile" />
+          <div v-if="chgImportResult" style="margin-top:12px">
+            <el-alert :type="chgImportResult.errors.length ? 'warning' : 'success'" :closable="false" show-icon>
+              成功导入 {{ chgImportResult.created }} 条{{ chgImportResult.errors.length ? `，失败 ${chgImportResult.errors.length} 条` : '' }}
+            </el-alert>
+            <ul v-if="chgImportResult.errors.length" class="imp-errors">
+              <li v-for="(e, i) in chgImportResult.errors" :key="i">{{ e }}</li>
+            </ul>
+          </div>
+          <template #footer>
+            <el-button @click="chgImportDialog = false">关闭</el-button>
+            <el-button type="primary" @click="submitChgImport">导入</el-button>
+          </template>
+        </el-dialog>
 
         <!-- 新建变更表单（确认才创建） -->
         <el-dialog v-model="changeDialog" title="新建变更" width="480px">

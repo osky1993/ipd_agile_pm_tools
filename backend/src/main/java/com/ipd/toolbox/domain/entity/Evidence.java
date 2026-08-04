@@ -18,6 +18,8 @@ public class Evidence {
     private Long sizeBytes;
     private String mime;
     private Long uploadedBy;
+    /** EVIDENCE=正式证据；ATTACHMENT=描述附件（粘贴截图等） */
+    private String category;
     private LocalDateTime createdAt;
     @TableLogic
     private Integer deleted;

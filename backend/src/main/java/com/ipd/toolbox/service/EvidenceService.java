@@ -48,9 +48,16 @@ public class EvidenceService {
         this.root = root;
     }
 
-    public List<Evidence> list(Long projectId) {
+    /** 默认只列正式证据；category=ATTACHMENT 可查描述附件。 */
+    public List<Evidence> list(Long projectId, String category) {
         return mapper.selectList(new QueryWrapper<Evidence>()
-                .eq("project_id", projectId).orderByDesc("id"));
+                .eq("project_id", projectId)
+                .eq("category", category == null || category.isBlank() ? "EVIDENCE" : category)
+                .orderByDesc("id"));
+    }
+
+    public List<Evidence> list(Long projectId) {
+        return list(projectId, null);
     }
 
     public Evidence get(Long id) {
@@ -63,6 +70,11 @@ public class EvidenceService {
 
     @Transactional
     public Evidence upload(Long projectId, MultipartFile file, String linkType, Long linkId) {
+        return upload(projectId, file, linkType, linkId, null);
+    }
+
+    @Transactional
+    public Evidence upload(Long projectId, MultipartFile file, String linkType, Long linkId, String category) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
             throw new BusinessException("项目不存在");
@@ -70,6 +82,7 @@ public class EvidenceService {
         if (file == null || file.isEmpty()) {
             throw new BusinessException("文件不能为空");
         }
+        boolean attachment = "ATTACHMENT".equals(category);
         try {
             byte[] bytes = file.getBytes();
             String sha256 = sha256(bytes);
@@ -81,7 +94,11 @@ public class EvidenceService {
 
             Evidence e = new Evidence();
             e.setProjectId(projectId);
-            e.setCode(codeGenerator.next(project.getId(), project.getCode(), "EV"));
+            // 附件不占用 EV 正式编号（也不进证据审计流），用随机短码满足唯一约束
+            e.setCode(attachment
+                    ? "AT-" + UUID.randomUUID().toString().replace("-", "").substring(0, 24)
+                    : codeGenerator.next(project.getId(), project.getCode(), "EV"));
+            e.setCategory(attachment ? "ATTACHMENT" : "EVIDENCE");
             e.setFileName(file.getOriginalFilename());
             e.setFilePath(target.toString());
             e.setSha256(sha256);
@@ -91,9 +108,11 @@ public class EvidenceService {
             e.setCreatedAt(LocalDateTime.now());
             e.setDeleted(0);
             mapper.insert(e);
-            audit.record(projectId, "EVIDENCE", e.getId(), "CREATE",
-                    "上传证据 " + e.getCode() + " " + e.getFileName() + " (sha256=" + sha256.substring(0, 12) + "…)",
-                    null, e);
+            if (!attachment) {
+                audit.record(projectId, "EVIDENCE", e.getId(), "CREATE",
+                        "上传证据 " + e.getCode() + " " + e.getFileName() + " (sha256=" + sha256.substring(0, 12) + "…)",
+                        null, e);
+            }
 
             // 关联对象 -evidences-> 证据
             if (linkType != null && linkId != null) {

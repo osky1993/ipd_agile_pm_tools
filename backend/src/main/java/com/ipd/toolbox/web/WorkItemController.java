@@ -6,6 +6,7 @@ import com.ipd.toolbox.domain.entity.WorkItem;
 import com.ipd.toolbox.domain.entity.WorkItemStatusLog;
 import com.ipd.toolbox.service.AuditService;
 import com.ipd.toolbox.service.TraceLinkService;
+import com.ipd.toolbox.service.WorkItemBatchService;
 import com.ipd.toolbox.service.WorkItemService;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,14 +22,34 @@ public class WorkItemController {
     private final com.ipd.toolbox.service.TreeImportService treeImportService;
     private final AuditService auditService;
     private final TraceLinkService traceLinkService;
+    private final WorkItemBatchService batchService;
+    private final com.ipd.toolbox.service.RiskChangeExcelService riskChangeExcelService;
 
     public WorkItemController(WorkItemService service, AuditService auditService,
                               TraceLinkService traceLinkService,
-                              com.ipd.toolbox.service.TreeImportService treeImportService) {
+                              com.ipd.toolbox.service.TreeImportService treeImportService,
+                              WorkItemBatchService batchService,
+                              com.ipd.toolbox.service.RiskChangeExcelService riskChangeExcelService) {
         this.service = service;
         this.treeImportService = treeImportService;
         this.auditService = auditService;
         this.traceLinkService = traceLinkService;
+        this.batchService = batchService;
+        this.riskChangeExcelService = riskChangeExcelService;
+    }
+
+    /** 批量操作：流转/改字段/进迭代。逐条独立事务，返回逐条成败。 */
+    @PostMapping("/batch")
+    public Result<List<WorkItemBatchService.BatchItemResult>> batch(
+            @RequestBody WorkItemBatchService.BatchRequest req) {
+        return Result.ok(batchService.execute(req));
+    }
+
+    /** 批量创建（MCP/AI 拆条入口）：dryRun 默认只预览，显式 false 才落库。 */
+    @PostMapping("/batch-create")
+    public Result<List<WorkItemBatchService.BatchItemResult>> batchCreate(
+            @RequestBody WorkItemBatchService.BatchCreateRequest req) {
+        return Result.ok(batchService.batchCreate(req));
     }
 
     @GetMapping
@@ -56,6 +77,25 @@ public class WorkItemController {
                 .contentType(org.springframework.http.MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(treeImportService.template());
+    }
+
+    /** 风险/变更 Excel 导入模板下载。 */
+    @GetMapping("/import-excel-template.xlsx")
+    public org.springframework.http.ResponseEntity<byte[]> importExcelTemplate(@RequestParam String type) {
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=" + type.toLowerCase() + "-import-template.xlsx")
+                .contentType(org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(riskChangeExcelService.template(type));
+    }
+
+    /** 风险/变更 Excel 导入（RISK 的处置措施/期限写 ext_fields）。 */
+    @PostMapping("/import-excel")
+    public Result<Map<String, Object>> importExcel(
+            @RequestParam Long projectId, @RequestParam String type,
+            @org.springframework.web.bind.annotation.RequestPart("file") org.springframework.web.multipart.MultipartFile file)
+            throws java.io.IOException {
+        return Result.ok(riskChangeExcelService.importExcel(projectId, type, file.getInputStream()));
     }
 
     /** 能力与需求树 Excel 导入（层级序号 1/1.1/1.1.1 表达树）。 */

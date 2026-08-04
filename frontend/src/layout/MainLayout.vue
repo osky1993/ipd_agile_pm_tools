@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
+import QuickCreateDialog from '@/components/QuickCreateDialog.vue'
+import { typeLabel } from '@/utils/labels'
+import { useHotkeys } from '@/utils/hotkeys'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,7 +14,7 @@ const auth = useAuthStore()
 
 const menus = computed(() =>
   router.getRoutes()
-    .filter((r) => r.meta?.title && r.name !== 'login')
+    .filter((r) => r.meta?.title && r.name !== 'login' && !r.meta?.hidden)
     .map((r) => ({ path: r.path, title: r.meta!.title as string, icon: r.meta!.icon as string })),
 )
 
@@ -21,7 +24,6 @@ const activePath = computed(() => route.path)
 const searchQ = ref('')
 const drawerVisible = ref(false)
 const currentId = ref<number | null>(null)
-const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: '需求', STORY: '故事', TASK: '任务', DEFECT: '缺陷', RISK: '风险', CHANGE: '变更' }
 
 async function fetchSuggestions(q: string, cb: (items: { value: string; item: WorkItem }[]) => void) {
   if (!q || !q.trim()) return cb([])
@@ -38,6 +40,36 @@ function logout() {
   auth.logout()
   router.push('/login')
 }
+
+// ---------- 全局快捷键 ----------
+const searchRef = ref<{ focus: () => void } | null>(null)
+const quickCreateVisible = ref(false)
+const hotkeyHelpVisible = ref(false)
+
+function onQuickCreated(item: WorkItem) {
+  currentId.value = item.id
+  drawerVisible.value = true
+}
+
+const GOTO: Record<string, string> = {
+  m: '/my', d: '/dashboard', p: '/projects', r: '/requirements',
+  b: '/board', q: '/quality', t: '/trace', e: '/performance', w: '/workitems', l: '/roadmap',
+}
+useHotkeys({
+  '/': () => searchRef.value?.focus(),
+  n: () => { quickCreateVisible.value = true },
+  '?': () => { hotkeyHelpVisible.value = true },
+  ...Object.fromEntries(Object.entries(GOTO).map(([k, path]) => [`g ${k}`, () => router.push(path)])),
+})
+
+const HOTKEY_HELP: [string, string][] = [
+  ['/', '聚焦全局搜索'],
+  ['n', '快速新建工作项'],
+  ['g m', '我的一天'], ['g d', '项目驾驶舱'], ['g p', '项目·版本·阶段'], ['g l', '路标图'],
+  ['g r', '能力与需求树'], ['g b', 'Sprint看板'], ['g q', '测试·缺陷·变更'],
+  ['g t', '追溯·风险·证据·决策'], ['g e', '效能改进'], ['g w', '工作项清单'],
+  ['?', '本速查表'],
+]
 </script>
 
 <template>
@@ -55,10 +87,10 @@ function logout() {
       <el-header class="header">
         <span class="page-title">{{ route.meta.title }}</span>
         <div class="right">
-          <el-autocomplete v-model="searchQ" :fetch-suggestions="fetchSuggestions" placeholder="搜索工作项（编号/标题）"
+          <el-autocomplete ref="searchRef" v-model="searchQ" :fetch-suggestions="fetchSuggestions" placeholder="搜索工作项（ / 聚焦）"
             clearable style="width:260px" :trigger-on-focus="false" @select="onSelect">
             <template #default="{ item }">
-              <el-tag size="small" type="info" style="margin-right:6px">{{ TYPE_LABEL[item.item.type] ?? item.item.type }}</el-tag>
+              <el-tag size="small" type="info" style="margin-right:6px">{{ typeLabel(item.item.type) }}</el-tag>
               <span class="s-code">{{ item.item.code }}</span> {{ item.item.title }}
             </template>
           </el-autocomplete>
@@ -72,6 +104,15 @@ function logout() {
       </el-main>
     </el-container>
     <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" />
+    <QuickCreateDialog v-model="quickCreateVisible" @created="onQuickCreated" />
+    <el-dialog v-model="hotkeyHelpVisible" title="键盘快捷键" width="420px">
+      <table class="hk-table">
+        <tr v-for="[k, desc] in HOTKEY_HELP" :key="k">
+          <td class="hk-key"><kbd>{{ k }}</kbd></td>
+          <td>{{ desc }}</td>
+        </tr>
+      </table>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -87,4 +128,8 @@ function logout() {
 .role-tag { margin-right: 2px; }
 .main { background: #f5f7fa; }
 .s-code { font-family: monospace; color: #909399; }
+.hk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hk-table td { padding: 5px 8px; border-bottom: 1px solid #f5f7fa; }
+.hk-key { width: 70px; }
+.hk-table kbd { background: #f5f7fa; border: 1px solid #dcdfe6; border-radius: 4px; padding: 1px 7px; font-family: monospace; font-size: 12px; }
 </style>

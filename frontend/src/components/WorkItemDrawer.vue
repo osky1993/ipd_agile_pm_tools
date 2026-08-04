@@ -7,7 +7,9 @@ import {
 } from '@/api/workitem'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { evidenceApi, type Evidence } from '@/api/governance'
-import { statusLabel } from '@/utils/labels'
+import { statusLabel, typeLabel, relationLabel } from '@/utils/labels'
+import MarkdownView from '@/components/MarkdownView.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 const props = defineProps<{ modelValue: boolean; itemId: number | null }>()
 const emit = defineEmits<{
@@ -20,14 +22,11 @@ const visible = computed({
   set: (v) => emit('update:modelValue', v),
 })
 
-const TYPE_LABEL: Record<string, string> = {
-  CAPABILITY: '产品能力', REQUIREMENT: '需求', STORY: '用户故事',
-  TASK: '任务', DEFECT: '缺陷', RISK: '风险', CHANGE: '变更',
-}
-
 const item = ref<WorkItem | null>(null)
 const loading = ref(false)
 const activeTab = ref('basic')
+// 说明/验收条件默认只读渲染（Markdown），点「编辑」再切换编辑器，减少误触
+const descEditing = ref(false)
 
 const nextStatuses = ref<string[]>([])
 const traces = ref<TraceView[]>([])
@@ -35,20 +34,8 @@ const audits = ref<AuditEvent[]>([])
 const history = ref<StatusLog[]>([])
 const relations = ref<string[]>([])
 
-// 关联表单：关系类型中文化；目标按关系类型切换数据源（工作项/版本/证据）下拉选择
-const REL_ZH: Record<string, string> = {
-  contributes_to: '贡献于（商业目标）',
-  parent_of: '分解为（父→子）',
-  implements: '实现',
-  verifies: '验证',
-  blocks: '阻塞',
-  depends_on: '依赖于',
-  changes: '变更涉及',
-  affects: '影响',
-  evidences: '佐证（挂证据）',
-  released_in: '纳入版本',
-}
-const relLabel = (r: string) => REL_ZH[r] ?? r
+// 关联表单：关系类型中文化（labels.ts）；目标按关系类型切换数据源（工作项/版本/证据）下拉选择
+const relLabel = relationLabel
 
 const traceForm = ref({ relation: '', targetId: undefined as number | undefined })
 const targetItems = ref<WorkItem[]>([])
@@ -105,6 +92,7 @@ watch(
   async ([open, id]) => {
     if (open && id) {
       activeTab.value = 'basic'
+      descEditing.value = false
       if (!relations.value.length) {
         relations.value = await metaApi.traceRelations()
       }
@@ -192,7 +180,7 @@ const statusType = (s: string) => {
 </script>
 
 <template>
-  <el-drawer v-model="visible" :size="620" :title="item ? `${item.code} · ${TYPE_LABEL[item.type] || item.type}` : '工作项'">
+  <el-drawer v-model="visible" :size="620" :title="item ? `${item.code} · ${typeLabel(item.type)}` : '工作项'">
     <div v-loading="loading">
       <template v-if="item">
         <div class="head">
@@ -216,8 +204,29 @@ const statusType = (s: string) => {
           <el-tab-pane label="基本信息" name="basic">
             <el-form label-width="88px" label-position="right">
               <el-form-item label="标题"><el-input v-model="item.title" /></el-form-item>
-              <el-form-item label="说明"><el-input v-model="item.description" type="textarea" :rows="2" /></el-form-item>
-              <el-form-item label="验收条件"><el-input v-model="item.acceptanceCriteria" type="textarea" :rows="2" placeholder="进入 Ready 的前提" /></el-form-item>
+              <el-form-item label="说明">
+                <template v-if="descEditing">
+                  <MarkdownEditor v-model="item.description" :project-id="item.projectId" :rows="4" placeholder="支持 Markdown，可粘贴截图" />
+                </template>
+                <template v-else>
+                  <div class="md-ro">
+                    <MarkdownView v-if="item.description" :source="item.description" />
+                    <span v-else class="md-empty">（未填写）</span>
+                    <el-button link type="primary" size="small" class="md-edit-btn" @click="descEditing = true">编辑</el-button>
+                  </div>
+                </template>
+              </el-form-item>
+              <el-form-item label="验收条件">
+                <template v-if="descEditing">
+                  <MarkdownEditor v-model="item.acceptanceCriteria" :project-id="item.projectId" :rows="3" placeholder="进入 Ready 的前提" />
+                </template>
+                <template v-else>
+                  <div class="md-ro">
+                    <MarkdownView v-if="item.acceptanceCriteria" :source="item.acceptanceCriteria" />
+                    <span v-else class="md-empty">（未填写）</span>
+                  </div>
+                </template>
+              </el-form-item>
               <el-row :gutter="12">
                 <el-col :span="12"><el-form-item label="责任人ID"><el-input v-model.number="item.ownerId" placeholder="用户ID" /></el-form-item></el-col>
                 <el-col :span="12"><el-form-item label="估算"><el-input v-model="item.estimate" placeholder="如 3" /></el-form-item></el-col>
@@ -311,6 +320,9 @@ const statusType = (s: string) => {
 .status-actions .label { color: #909399; font-size: 13px; }
 .terminal { color: #909399; font-size: 13px; }
 .add-trace { display: flex; gap: 8px; align-items: center; }
+.md-ro { width: 100%; position: relative; padding-right: 44px; min-height: 24px; }
+.md-empty { color: #c0c4cc; font-size: 13px; }
+.md-edit-btn { position: absolute; right: 0; top: 0; }
 .accepted { color: #67c23a; font-size: 13px; }
 .reason { color: #909399; }
 </style>

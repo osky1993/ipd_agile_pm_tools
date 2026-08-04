@@ -1,0 +1,181 @@
+package com.ipd.toolbox.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.ipd.toolbox.common.BusinessException;
+import com.ipd.toolbox.domain.entity.WorkItem;
+import com.ipd.toolbox.security.UserContext;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 风险 / 变更 Excel 导入（仿 TestExcelService 范式，readRows 为纯函数便于单测）。
+ * RISK：处置措施/处置期限 写入 ext_fields 的 mitigation/dueDate（与治理页、预警、效能口径一致）。
+ * CHANGE：仅基础字段；影响分析仍走守卫流程，不在导入时预置。
+ */
+@Service
+public class RiskChangeExcelService {
+
+    static final Set<String> TYPES = Set.of("RISK", "CHANGE");
+    private static final String[] RISK_HEADERS =
+            {"标题(必填)", "说明", "优先级(P0~P3)", "责任人ID", "处置措施", "处置期限(yyyy-MM-dd)"};
+    private static final String[] CHANGE_HEADERS = {"标题(必填)", "说明", "优先级(P0~P3)"};
+
+    record ExcelRow(int rowNum, String title, String description, String priority,
+                    String ownerId, String mitigation, String dueDate) {
+    }
+
+    private final WorkItemService workItemService;
+    private final ObjectMapper objectMapper;
+
+    public RiskChangeExcelService(WorkItemService workItemService, ObjectMapper objectMapper) {
+        this.workItemService = workItemService;
+        this.objectMapper = objectMapper;
+    }
+
+    static List<ExcelRow> readRows(InputStream in) throws IOException {
+        List<ExcelRow> out = new ArrayList<>();
+        DataFormatter fmt = new DataFormatter();
+        try (Workbook wb = new XSSFWorkbook(in)) {
+            Sheet sheet = wb.getSheetAt(0);
+            for (Row row : sheet) {
+                if (row.getRowNum() == 0) {
+                    continue;
+                }
+                String[] c = new String[6];
+                for (int i = 0; i < 6; i++) {
+                    Cell cell = row.getCell(i);
+                    c[i] = cell == null ? "" : fmt.formatCellValue(cell).trim();
+                }
+                out.add(new ExcelRow(row.getRowNum() + 1, c[0], c[1], c[2], c[3], c[4], c[5]));
+            }
+        }
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> importExcel(Long projectId, String type, InputStream in) {
+        UserContext.requireRole("PM");
+        if (!TYPES.contains(type)) {
+            throw new BusinessException("导入类型仅支持 RISK / CHANGE");
+        }
+        List<ExcelRow> rows;
+        try {
+            rows = readRows(in);
+        } catch (IOException e) {
+            throw new BusinessException("Excel 解析失败: " + e.getMessage());
+        }
+        int created = 0;
+        List<String> errors = new ArrayList<>();
+        for (ExcelRow r : rows) {
+            if (r.title().isBlank() && r.description().isBlank()) {
+                continue; // 空行
+            }
+            try {
+                created += importRow(projectId, type, r);
+            } catch (BusinessException e) {
+                errors.add("第" + r.rowNum() + "行: " + e.getMessage());
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("created", created);
+        result.put("errors", errors);
+        return result;
+    }
+
+    private int importRow(Long projectId, String type, ExcelRow r) {
+        if (r.title().isBlank()) {
+            throw new BusinessException("标题不能为空");
+        }
+        if (!r.priority().isBlank() && !Set.of("P0", "P1", "P2", "P3").contains(r.priority())) {
+            throw new BusinessException("优先级须为 P0~P3，当前: " + r.priority());
+        }
+        WorkItem w = new WorkItem();
+        w.setProjectId(projectId);
+        w.setType(type);
+        w.setTitle(r.title());
+        w.setDescription(r.description().isBlank() ? null : r.description());
+        w.setPriority(r.priority().isBlank() ? null : r.priority());
+        if ("RISK".equals(type)) {
+            if (!r.ownerId().isBlank()) {
+                try {
+                    w.setOwnerId(Long.parseLong(r.ownerId()));
+                } catch (NumberFormatException e) {
+                    throw new BusinessException("责任人ID须为数字，当前: " + r.ownerId());
+                }
+            }
+            if (!r.dueDate().isBlank()) {
+                try {
+                    LocalDate.parse(r.dueDate());
+                } catch (DateTimeParseException e) {
+                    throw new BusinessException("处置期限格式须为 yyyy-MM-dd，当前: " + r.dueDate());
+                }
+            }
+            if (!r.mitigation().isBlank() || !r.dueDate().isBlank()) {
+                ObjectNode ext = objectMapper.createObjectNode();
+                if (!r.mitigation().isBlank()) {
+                    ext.put("mitigation", r.mitigation());
+                }
+                if (!r.dueDate().isBlank()) {
+                    ext.put("dueDate", r.dueDate());
+                }
+                w.setExtFields(ext.toString());
+            }
+        }
+        workItemService.create(w, null);
+        return 1;
+    }
+
+    public byte[] template(String type) {
+        if (!TYPES.contains(type)) {
+            throw new BusinessException("模板类型仅支持 RISK / CHANGE");
+        }
+        String[] headers = "RISK".equals(type) ? RISK_HEADERS : CHANGE_HEADERS;
+        String[][] samples = "RISK".equals(type)
+                ? new String[][]{
+                        {"关键元器件断供风险", "主控芯片供应商单一", "P1", "1", "引入第二供应商并完成认证", "2026-09-30"},
+                        {"整机噪音超标风险", "风道设计余量不足", "P2", "", "预研降噪方案", ""}}
+                : new String[][]{
+                        {"集尘座风道重新设计", "为降低噪音需调整风道结构", "P1"},
+                        {"App 配网流程简化", "配网失败率高，需改为蓝牙辅助配网", "P2"}};
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("RISK".equals(type) ? "风险" : "变更");
+            CellStyle headStyle = wb.createCellStyle();
+            Font bold = wb.createFont();
+            bold.setBold(true);
+            headStyle.setFont(bold);
+            Row head = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell c = head.createCell(i);
+                c.setCellValue(headers[i]);
+                c.setCellStyle(headStyle);
+            }
+            for (int r = 0; r < samples.length; r++) {
+                Row row = sheet.createRow(r + 1);
+                for (int i = 0; i < samples[r].length; i++) {
+                    row.createCell(i).setCellValue(samples[r][i]);
+                }
+            }
+            for (int i = 0; i < headers.length; i++) {
+                sheet.setColumnWidth(i, 26 * 256);
+            }
+            wb.write(bos);
+            return bos.toByteArray();
+        } catch (IOException e) {
+            throw new BusinessException("模板生成失败: " + e.getMessage());
+        }
+    }
+}

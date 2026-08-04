@@ -25,16 +25,18 @@ public class EvidenceController {
     }
 
     @GetMapping
-    public Result<List<Evidence>> list(@RequestParam Long projectId) {
-        return Result.ok(service.list(projectId));
+    public Result<List<Evidence>> list(@RequestParam Long projectId,
+                                       @RequestParam(required = false) String category) {
+        return Result.ok(service.list(projectId, category));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Evidence> upload(@RequestParam Long projectId,
                                    @RequestPart("file") MultipartFile file,
                                    @RequestParam(required = false) String linkType,
-                                   @RequestParam(required = false) Long linkId) {
-        return Result.ok(service.upload(projectId, file, linkType, linkId));
+                                   @RequestParam(required = false) Long linkId,
+                                   @RequestParam(required = false) String category) {
+        return Result.ok(service.upload(projectId, file, linkType, linkId, category));
     }
 
     @GetMapping("/{id}/download")
