@@ -7,13 +7,18 @@ const routes: RouteRecordRaw[] = [
   { path: '/bigscreen', name: 'bigscreen', component: () => import('@/views/ExecBoard.vue'), meta: { title: '数据大屏', icon: 'DataBoard' } },
   // 团队协作屏：上下游依赖 + 阻塞 + 交接（同为独立投屏页）
   { path: '/teamboard', name: 'teamboard', component: () => import('@/views/Teamboard.vue'), meta: { title: '团队协作屏', icon: 'Connection' } },
+  // 打印友好报告页（hidden：不进侧边栏菜单；独立于 MainLayout 便于 A4 排版）
+  { path: '/report/project/:projectId', name: 'report-project', component: () => import('@/views/report/ProjectReport.vue'), meta: { title: '项目状态报告', hidden: true } },
+  { path: '/report/dcp/:gateId', name: 'report-dcp', component: () => import('@/views/report/DcpReport.vue'), meta: { title: 'DCP 决策包', hidden: true } },
   {
     path: '/',
     component: () => import('@/layout/MainLayout.vue'),
-    redirect: '/dashboard',
+    redirect: '/my',
     children: [
+      { path: 'my', name: 'my', component: () => import('@/views/MyToday.vue'), meta: { title: '我的一天', icon: 'Sunny' } },
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '项目驾驶舱', icon: 'DataLine' } },
       { path: 'projects', name: 'projects', component: () => import('@/views/Projects.vue'), meta: { title: '项目·版本·阶段', icon: 'Folder' } },
+      { path: 'roadmap', name: 'roadmap', component: () => import('@/views/Roadmap.vue'), meta: { title: '路标图', icon: 'Calendar' } },
       { path: 'dcp', name: 'dcp', component: () => import('@/views/DcpBoard.vue'), meta: { title: 'DCP准入条件', icon: 'CircleCheck' } },
       { path: 'requirements', name: 'requirements', component: () => import('@/views/RequirementTree.vue'), meta: { title: '能力与需求树', icon: 'Share' } },
       { path: 'board', name: 'board', component: () => import('@/views/Board.vue'), meta: { title: 'Sprint看板', icon: 'Grid' } },
@@ -36,7 +41,7 @@ router.beforeEach((to) => {
     return { path: '/login' }
   }
   if (to.path === '/login' && token) {
-    return { path: '/dashboard' }
+    return { path: '/my' }
   }
   return true
 })

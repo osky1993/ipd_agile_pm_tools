@@ -150,6 +150,9 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
           <el-option v-for="g in gates" :key="g.id" :label="`${g.stageName} / ${g.gateName}`" :value="g.id" />
         </el-select>
       </div>
+      <a v-if="viewMode === 'dcp' && gateId && projectId" :href="`/report/dcp/${gateId}?projectId=${projectId}`" target="_blank" style="margin-right:10px">
+        <el-button plain><el-icon><Printer /></el-icon>生成决策包</el-button>
+      </a>
       <el-button v-if="viewMode === 'dcp'" type="primary" :disabled="!gateId" @click="reviewDialog = true">发起 DCP 评审</el-button>
       <el-button v-else type="primary" @click="itemDialog = true">新增准备度检查项</el-button>
     </div>

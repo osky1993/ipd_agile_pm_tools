@@ -1,0 +1,16 @@
+/* 报告页 A4 打印样式：浏览器「打印 → 存为 PDF」即导出 */
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; }
+  .report-page { max-width: none !important; padding: 0 !important; box-shadow: none !important; }
+  .report-section { break-inside: avoid; }
+  .page-break { break-before: page; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+}

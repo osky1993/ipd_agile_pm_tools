@@ -126,6 +126,9 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
   <div>
     <div class="toolbar">
       <ProjectChips v-model="projectId" class="chips-flex" @change="load" />
+      <a v-if="projectId" :href="`/report/project/${projectId}`" target="_blank">
+        <el-button type="primary" plain><el-icon><Printer /></el-icon>生成状态报告</el-button>
+      </a>
       <a v-if="projectId" :href="metricsApi.exportCsvUrl(projectId)" target="_blank">
         <el-button><el-icon><Download /></el-icon>导出工作项 CSV</el-button>
       </a>

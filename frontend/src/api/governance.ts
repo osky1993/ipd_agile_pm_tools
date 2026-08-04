@@ -22,6 +22,9 @@ export interface Decision {
   decidedBy: number
   decidedAt: string
   prevDecisionId?: number | null
+  snapshot?: string | null
+  linkedRiskId?: number | null
+  commitmentDue?: string | null
 }
 
 export interface ImpactItem {
