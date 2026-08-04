@@ -24,6 +24,20 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
+    /** 签发 365 天长效 API token（供 MCP / 脚本对接），审计留痕。 */
+    public Map<String, Object> apiToken(Long userId, AuditService audit) {
+        SysUser user = userMapper.selectById(userId);
+        if (user == null || user.getEnabled() == null || user.getEnabled() != 1) {
+            throw new BusinessException(4011, "用户不存在或已停用");
+        }
+        List<String> roles = userMapper.findRoleCodes(user.getId());
+        long ttl = 365L * 24 * 60 * 60_000L;
+        String token = jwtService.generate(user.getId(), user.getUsername(), roles, ttl);
+        audit.record(null, "SYS_USER", user.getId(), "API_TOKEN",
+                "签发长效 API token（365 天，用户 " + user.getUsername() + "）", null, null);
+        return Map.of("token", token, "expiresInDays", 365);
+    }
+
     public Map<String, Object> login(String username, String password) {
         SysUser user = userMapper.selectOne(new QueryWrapper<SysUser>().eq("username", username));
         if (user == null || user.getEnabled() == null || user.getEnabled() != 1) {

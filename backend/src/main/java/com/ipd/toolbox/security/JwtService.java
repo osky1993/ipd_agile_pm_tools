@@ -24,13 +24,18 @@ public class JwtService {
     }
 
     public String generate(Long userId, String username, List<String> roles) {
+        return generate(userId, username, roles, expireMillis);
+    }
+
+    /** 指定有效期签发（长效 API token 用，如 MCP 对接）。 */
+    public String generate(Long userId, String username, List<String> roles, long ttlMillis) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("username", username)
                 .claim("roles", roles)
                 .issuedAt(new Date(now))
-                .expiration(new Date(now + expireMillis))
+                .expiration(new Date(now + ttlMillis))
                 .signWith(key)
                 .compact();
     }
