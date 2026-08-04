@@ -16,6 +16,8 @@ mcp/dist/
 
 # claude 本地会话配置
 .claude/settings.local.json
+# MCP 注册配置（内含长效 token，勿入库）
+.mcp.json
 
 # 证据文件与本地数据
 data/
