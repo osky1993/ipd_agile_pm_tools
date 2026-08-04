@@ -34,6 +34,28 @@ export function statusLabel(status: string | null | undefined, type?: string): s
   return STATUS_ZH[status] ?? status
 }
 
+/** 工作项类型 */
+const TYPE_ZH: Record<string, string> = {
+  CAPABILITY: '产品能力', REQUIREMENT: '需求', STORY: '用户故事',
+  TASK: '任务', DEFECT: '缺陷', RISK: '风险', CHANGE: '变更',
+}
+export const typeLabel = (t: string | null | undefined) => (t ? TYPE_ZH[t] ?? t : '')
+
+/** 追溯关系类型 */
+const REL_ZH: Record<string, string> = {
+  contributes_to: '贡献于（商业目标）',
+  parent_of: '分解为（父→子）',
+  implements: '实现',
+  verifies: '验证',
+  blocks: '阻塞',
+  depends_on: '依赖于',
+  changes: '变更涉及',
+  affects: '影响',
+  evidences: '佐证（挂证据）',
+  released_in: '纳入版本',
+}
+export const relationLabel = (r: string) => REL_ZH[r] ?? r
+
 /** 迭代状态 */
 const SPRINT_ZH: Record<string, string> = {
   PLANNING: '规划中', ACTIVE: '进行中', DONE: '已完成', CLOSED: '已关闭',

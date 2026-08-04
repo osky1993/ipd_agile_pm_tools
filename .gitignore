@@ -10,6 +10,13 @@ frontend/.vite/
 frontend/vite.config.js
 frontend/vite.config.d.ts
 
+# mcp
+mcp/node_modules/
+mcp/dist/
+
+# claude 本地会话配置
+.claude/settings.local.json
+
 # 证据文件与本地数据
 data/
 backend/data/

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import http from '@/api/http'
+import { useProjectStore } from '@/stores/project'
 
 /**
  * 项目平铺选择（chips）：替代下拉，一眼可见、一击切换。
- * 组件自带项目加载与"默认选中第一个"，选中（含自动选中）都会触发 change。
+ * 组件自带项目加载与默认选中：优先恢复全局 store 记住的项目（跨页面保持），否则选第一个。
+ * 选中（含自动选中）都会触发 change，并写回全局 store。
  */
 interface Project { id: number; code: string; name: string; lifecycleStatus?: string }
 
@@ -14,10 +16,12 @@ const emit = defineEmits<{
   (e: 'change', v: number): void
 }>()
 
+const store = useProjectStore()
 const projects = ref<Project[]>([])
 
 function select(id: number) {
   if (props.modelValue === id) return
+  store.setCurrent(id)
   emit('update:modelValue', id)
   emit('change', id)
 }
@@ -25,8 +29,11 @@ function select(id: number) {
 onMounted(async () => {
   projects.value = await http.get<any, Project[]>('/projects')
   if (props.modelValue == null && projects.value.length) {
-    emit('update:modelValue', projects.value[0].id)
-    emit('change', projects.value[0].id)
+    const remembered = store.currentProjectId
+    const initial = projects.value.find((p) => p.id === remembered)?.id ?? projects.value[0].id
+    store.setCurrent(initial)
+    emit('update:modelValue', initial)
+    emit('change', initial)
   }
 })
 </script>
