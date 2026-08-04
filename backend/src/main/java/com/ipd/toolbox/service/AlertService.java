@@ -5,6 +5,7 @@ import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Decision;
 import com.ipd.toolbox.domain.entity.GateCriterion;
 import com.ipd.toolbox.domain.entity.Project;
+import com.ipd.toolbox.domain.entity.StageGate;
 import com.ipd.toolbox.domain.entity.WorkItem;
 import com.ipd.toolbox.domain.enums.WorkItemType;
 import com.ipd.toolbox.mapper.*;
@@ -31,21 +32,25 @@ public class AlertService {
     static final int WAIVER_WINDOW_DAYS = 14;
     static final int WIP_STALE_DAYS = 7;
     static final int DEFECT_AGING_DAYS = 14;
+    static final int DCP_WINDOW_DAYS = 14;
 
     private final ProjectMapper projectMapper;
     private final WorkItemMapper workItemMapper;
     private final DecisionMapper decisionMapper;
     private final GateCriterionMapper criterionMapper;
+    private final StageGateMapper stageGateMapper;
     private final PerfMapper perfMapper;
     private final PerfService perfService;
 
     public AlertService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                         DecisionMapper decisionMapper, GateCriterionMapper criterionMapper,
+                        StageGateMapper stageGateMapper,
                         PerfMapper perfMapper, PerfService perfService) {
         this.projectMapper = projectMapper;
         this.workItemMapper = workItemMapper;
         this.decisionMapper = decisionMapper;
         this.criterionMapper = criterionMapper;
+        this.stageGateMapper = stageGateMapper;
         this.perfMapper = perfMapper;
         this.perfService = perfService;
     }
@@ -68,6 +73,7 @@ public class AlertService {
         out.addAll(waiverDue(projectId, today));
         out.addAll(wipStale(projectId, today));
         out.addAll(defectAging(projectId, today));
+        out.addAll(dcpApproaching(projectId, today));
         out.sort(Comparator
                 .comparing((Alert a) -> SEV_RANK.getOrDefault(a.severity(), 9))
                 .thenComparing(a -> a.due() == null ? LocalDate.MAX : a.due()));
@@ -191,6 +197,39 @@ public class AlertService {
                         r.get("code") + " " + r.get("title") + " 已 " + days + " 天无状态变化",
                         "WORK_ITEM", ((Number) r.get("id")).longValue(),
                         String.valueOf(r.get("code")), null));
+            }
+        }
+        return out;
+    }
+
+    /** DCP 计划评审日临近/已逾期且尚无 PASS/CONDITIONAL 决策。 */
+    List<Alert> dcpApproaching(Long projectId, LocalDate today) {
+        // 已有通过类结论的 gate 不再提醒（按 subject 取最新一条决策）
+        Map<Long, Decision> latestByGate = new LinkedHashMap<>();
+        for (Decision d : decisionMapper.selectList(new QueryWrapper<Decision>()
+                .eq("project_id", projectId).eq("subject_type", "STAGE_GATE").orderByAsc("id"))) {
+            latestByGate.put(d.getSubjectId(), d);
+        }
+        List<Alert> out = new ArrayList<>();
+        for (StageGate g : stageGateMapper.selectList(new QueryWrapper<StageGate>()
+                .eq("project_id", projectId).isNotNull("plan_date"))) {
+            Decision latest = latestByGate.get(g.getId());
+            if (latest != null && ("PASS".equals(latest.getConclusion())
+                    || "CONDITIONAL".equals(latest.getConclusion()))) {
+                continue;
+            }
+            LocalDate plan = g.getPlanDate();
+            String name = g.getCode() + " " + g.getStageName() + "/" + g.getGateName();
+            if (plan.isBefore(today)) {
+                out.add(new Alert("HIGH", "DCP_APPROACHING", "DCP 已逾期未评审",
+                        name + " 计划评审日 " + plan + " 已过 "
+                                + ChronoUnit.DAYS.between(plan, today) + " 天",
+                        "STAGE_GATE", g.getId(), g.getCode(), plan));
+            } else if (!plan.isAfter(today.plusDays(DCP_WINDOW_DAYS))) {
+                out.add(new Alert("MED", "DCP_APPROACHING", "DCP 评审临近",
+                        name + " 计划评审日 " + plan + "（"
+                                + ChronoUnit.DAYS.between(today, plan) + " 天后）",
+                        "STAGE_GATE", g.getId(), g.getCode(), plan));
             }
         }
         return out;

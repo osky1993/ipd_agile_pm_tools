@@ -30,8 +30,8 @@ const activeTab = ref('version')
 const versions = ref<ProductVersion[]>([])
 const stages = ref<StageGate[]>([])
 const criteria = ref<GateCriterion[]>([])
-const vForm = reactive({ model: '', versionNo: '', baseline: '' })
-const sForm = reactive({ stageName: '', gateName: '', seq: 1 })
+const vForm = reactive({ model: '', versionNo: '', baseline: '', planReleaseDate: '' as string | null })
+const sForm = reactive({ stageName: '', gateName: '', seq: 1, planDate: '' as string | null })
 const cForm = reactive({ domain: '质量', criterion: '', evidenceReq: '', isRedline: false })
 const DOMAINS = ['技术', '质量', '供应', '制造', '商业', '上市']
 
@@ -92,18 +92,28 @@ async function refreshCatalog() {
 
 async function addVersion() {
   if (!current.value || !vForm.versionNo) return ElMessage.warning('版本号必填')
-  await versionApi.create({ projectId: current.value.id, ...vForm })
+  await versionApi.create({ projectId: current.value.id, ...vForm, planReleaseDate: vForm.planReleaseDate || null })
   ElMessage.success('已新增版本')
-  vForm.model = ''; vForm.versionNo = ''; vForm.baseline = ''
+  vForm.model = ''; vForm.versionNo = ''; vForm.baseline = ''; vForm.planReleaseDate = ''
   await refreshCatalog()
 }
 
 async function addStage() {
   if (!current.value || !sForm.stageName || !sForm.gateName) return ElMessage.warning('阶段名和DCP名必填')
-  await stageApi.create({ projectId: current.value.id, ...sForm })
+  await stageApi.create({ projectId: current.value.id, ...sForm, planDate: sForm.planDate || null })
   ElMessage.success('已新增阶段/DCP')
-  sForm.stageName = ''; sForm.gateName = ''
+  sForm.stageName = ''; sForm.gateName = ''; sForm.planDate = ''
   await refreshCatalog()
+}
+
+/** 行内改日期（版本发布日 / DCP 计划评审日），选择即保存 */
+async function saveVersionDate(row: ProductVersion, field: 'planReleaseDate' | 'actualReleaseDate') {
+  await versionApi.update(row.id, { [field]: row[field] })
+  ElMessage.success('日期已保存')
+}
+async function saveStageDate(row: StageGate, field: 'planDate' | 'forecastDate') {
+  await stageApi.update(row.id, { [field]: row[field] })
+  ElMessage.success('日期已保存')
 }
 
 async function addCriterion() {
@@ -181,6 +191,7 @@ onMounted(load)
             <el-input v-model="vForm.model" placeholder="型号" size="small" style="width:120px" />
             <el-input v-model="vForm.versionNo" placeholder="版本号 V1.0" size="small" style="width:120px" />
             <el-input v-model="vForm.baseline" placeholder="基线" size="small" style="width:100px" />
+            <el-date-picker v-model="vForm.planReleaseDate" type="date" value-format="YYYY-MM-DD" placeholder="计划发布日" size="small" style="width:130px" />
             <el-button size="small" type="primary" @click="addVersion">新增版本</el-button>
           </div>
           <el-table :data="versions" size="small" border style="margin-top:10px">
@@ -188,6 +199,18 @@ onMounted(load)
             <el-table-column prop="model" label="型号" />
             <el-table-column prop="versionNo" label="版本号" />
             <el-table-column prop="baseline" label="基线" />
+            <el-table-column label="计划发布" width="140">
+              <template #default="{ row }">
+                <el-date-picker v-model="row.planReleaseDate" type="date" value-format="YYYY-MM-DD" size="small"
+                  placeholder="—" style="width:120px" @change="saveVersionDate(row, 'planReleaseDate')" />
+              </template>
+            </el-table-column>
+            <el-table-column label="实际发布" width="140">
+              <template #default="{ row }">
+                <el-date-picker v-model="row.actualReleaseDate" type="date" value-format="YYYY-MM-DD" size="small"
+                  placeholder="—" style="width:120px" @change="saveVersionDate(row, 'actualReleaseDate')" />
+              </template>
+            </el-table-column>
           </el-table>
         </el-tab-pane>
 
@@ -196,6 +219,7 @@ onMounted(load)
             <el-input v-model="sForm.stageName" placeholder="阶段名" size="small" style="width:130px" />
             <el-input v-model="sForm.gateName" placeholder="DCP名" size="small" style="width:110px" />
             <el-input-number v-model="sForm.seq" :min="1" size="small" style="width:90px" />
+            <el-date-picker v-model="sForm.planDate" type="date" value-format="YYYY-MM-DD" placeholder="计划评审日" size="small" style="width:130px" />
             <el-button size="small" type="primary" @click="addStage">新增阶段</el-button>
           </div>
           <el-table :data="stages" size="small" border style="margin:10px 0">
@@ -203,6 +227,12 @@ onMounted(load)
             <el-table-column prop="stageName" label="阶段" />
             <el-table-column prop="gateName" label="DCP" />
             <el-table-column prop="seq" label="次序" width="60" />
+            <el-table-column label="计划评审" width="140">
+              <template #default="{ row }">
+                <el-date-picker v-model="row.planDate" type="date" value-format="YYYY-MM-DD" size="small"
+                  placeholder="—" style="width:120px" @change="saveStageDate(row, 'planDate')" />
+              </template>
+            </el-table-column>
           </el-table>
 
           <el-divider content-position="left">DCP 准入条件（占位录入，完整评审在 DCP 页）</el-divider>

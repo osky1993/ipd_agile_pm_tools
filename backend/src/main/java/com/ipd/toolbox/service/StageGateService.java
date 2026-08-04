@@ -68,6 +68,8 @@ public class StageGateService {
         if (patch.getStageName() != null) old.setStageName(patch.getStageName());
         if (patch.getGateName() != null) old.setGateName(patch.getGateName());
         if (patch.getSeq() != null) old.setSeq(patch.getSeq());
+        if (patch.getPlanDate() != null) old.setPlanDate(patch.getPlanDate());
+        if (patch.getForecastDate() != null) old.setForecastDate(patch.getForecastDate());
         old.setUpdatedBy(UserContext.currentUserId());
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);

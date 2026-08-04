@@ -7,6 +7,8 @@ export interface ProductVersion {
   model?: string
   versionNo: string
   baseline?: string
+  planReleaseDate?: string | null
+  actualReleaseDate?: string | null
 }
 
 export interface StageGate {
@@ -16,6 +18,8 @@ export interface StageGate {
   stageName: string
   gateName: string
   seq: number
+  planDate?: string | null
+  forecastDate?: string | null
 }
 
 export interface GateCriterion {
@@ -45,11 +49,13 @@ export interface TreeNode {
 export const versionApi = {
   list: (projectId: number) => http.get<any, ProductVersion[]>('/product-versions', { params: { projectId } }),
   create: (data: Partial<ProductVersion>) => http.post<any, ProductVersion>('/product-versions', data),
+  update: (id: number, data: Partial<ProductVersion>) => http.put<any, ProductVersion>(`/product-versions/${id}`, data),
 }
 
 export const stageApi = {
   list: (projectId: number) => http.get<any, StageGate[]>('/stage-gates', { params: { projectId } }),
   create: (data: Partial<StageGate>) => http.post<any, StageGate>('/stage-gates', data),
+  update: (id: number, data: Partial<StageGate>) => http.put<any, StageGate>(`/stage-gates/${id}`, data),
 }
 
 export const criterionApi = {

@@ -3,6 +3,7 @@ package com.ipd.toolbox.domain.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -15,6 +16,8 @@ public class StageGate {
     private String stageName;
     private String gateName;
     private Integer seq;
+    private LocalDate planDate;
+    private LocalDate forecastDate;
     private Long createdBy;
     private LocalDateTime createdAt;
     private Long updatedBy;

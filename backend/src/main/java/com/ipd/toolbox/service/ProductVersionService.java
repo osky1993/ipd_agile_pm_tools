@@ -68,6 +68,8 @@ public class ProductVersionService {
         if (patch.getModel() != null) old.setModel(patch.getModel());
         if (patch.getVersionNo() != null) old.setVersionNo(patch.getVersionNo());
         if (patch.getBaseline() != null) old.setBaseline(patch.getBaseline());
+        if (patch.getPlanReleaseDate() != null) old.setPlanReleaseDate(patch.getPlanReleaseDate());
+        if (patch.getActualReleaseDate() != null) old.setActualReleaseDate(patch.getActualReleaseDate());
         old.setUpdatedBy(UserContext.currentUserId());
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);

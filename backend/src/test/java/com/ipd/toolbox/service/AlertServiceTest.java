@@ -23,6 +23,7 @@ class AlertServiceTest {
     private WorkItemMapper workItemMapper;
     private DecisionMapper decisionMapper;
     private GateCriterionMapper criterionMapper;
+    private StageGateMapper stageGateMapper;
     private AlertService service;
 
     private final LocalDate today = LocalDate.of(2026, 8, 1);
@@ -38,8 +39,9 @@ class AlertServiceTest {
                 mock(MetricTargetMapper.class), mock(IterationMapper.class),
                 mock(WorkItemMapper.class), mock(PerfSnapshotMapper.class),
                 mock(IterationCommitmentMapper.class), mock(AuditService.class), new ObjectMapper());
+        stageGateMapper = mock(StageGateMapper.class);
         service = new AlertService(projectMapper, workItemMapper, decisionMapper,
-                criterionMapper, perfMapper, perfService);
+                criterionMapper, stageGateMapper, perfMapper, perfService);
     }
 
     private WorkItem risk(Long id, String due, String status) {
@@ -146,6 +148,48 @@ class AlertServiceTest {
         assertEquals("RSK-2", alerts.get(0).refCode());
     }
 
+    private com.ipd.toolbox.domain.entity.StageGate gate(Long id, String plan) {
+        com.ipd.toolbox.domain.entity.StageGate g = new com.ipd.toolbox.domain.entity.StageGate();
+        g.setId(id);
+        g.setCode("DCP-" + id);
+        g.setStageName("开发");
+        g.setGateName("DCP" + id);
+        if (plan != null) {
+            g.setPlanDate(LocalDate.parse(plan));
+        }
+        return g;
+    }
+
+    @Test
+    void DCP临近边界_过期HIGH_14天内MED_15天不告警() {
+        when(decisionMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(stageGateMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                gate(1L, "2026-07-31"),   // 昨天 → HIGH 已逾期
+                gate(2L, "2026-08-15"),   // 14 天后 → MED
+                gate(3L, "2026-08-16"))); // 15 天后 → 不告警
+        List<AlertService.Alert> alerts = service.dcpApproaching(1L, today);
+        assertEquals(2, alerts.size());
+        assertEquals("HIGH", alerts.get(0).severity());
+        assertEquals("DCP-1", alerts.get(0).refCode());
+        assertEquals("MED", alerts.get(1).severity());
+        assertEquals("DCP-2", alerts.get(1).refCode());
+    }
+
+    @Test
+    void DCP已有通过类决策不告警_修订链只看最新() {
+        // gate 1：最新决策 PASS → 不告警；gate 2：先 PASS 后修订为 REJECT → 仍告警
+        when(decisionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                dec(1L, "1", "PASS", null, null),
+                dec(2L, "2", "PASS", null, null),
+                dec(3L, "2", "REJECT", null, null)));
+        when(stageGateMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                gate(1L, "2026-08-05"), gate(2L, "2026-08-05")));
+        List<AlertService.Alert> alerts = service.dcpApproaching(1L, today);
+        assertEquals(1, alerts.size());
+        assertEquals("DCP-2", alerts.get(0).refCode());
+        assertEquals("DCP_APPROACHING", alerts.get(0).type());
+    }
+
     @Test
     void 排序_HIGH在前_同级按期限升序() {
         List<AlertService.Alert> unsorted = new java.util.ArrayList<>(List.of(
@@ -172,7 +216,7 @@ class AlertServiceTest {
         p.setLifecycleStatus("CLOSED");
         when(pm.selectById(1L)).thenReturn(p);
         AlertService closed = new AlertService(pm, workItemMapper, decisionMapper,
-                criterionMapper, mock(PerfMapper.class), mock(PerfService.class));
+                criterionMapper, stageGateMapper, mock(PerfMapper.class), mock(PerfService.class));
         assertTrue(closed.list(1L).isEmpty());
     }
 }
