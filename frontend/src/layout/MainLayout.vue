@@ -25,7 +25,7 @@ const MENU_DEF: (string | { title: string; icon: string; children: string[] })[]
   { title: '规划与基线', icon: 'Calendar', children: ['/projects', '/roadmap', '/baseline'] },
   { title: '需求与交付', icon: 'Grid', children: ['/requirements', '/board', '/quality', '/workitems'] },
   { title: '决策与治理', icon: 'CircleCheck', children: ['/dcp', '/trace'] },
-  { title: '效能与资产', icon: 'TrendCharts', children: ['/performance', '/assets'] },
+  { title: '效能与资产', icon: 'TrendCharts', children: ['/performance', '/assets', '/timemachine'] },
   { title: '投屏', icon: 'Monitor', children: ['/bigscreen', '/teamboard'] },
 ]
 

@@ -31,6 +31,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'performance', name: 'performance', component: () => import('@/views/Performance.vue'), meta: { title: '效能改进', icon: 'TrendCharts' } },
       { path: 'workitems', name: 'workitems', component: () => import('@/views/WorkItems.vue'), meta: { title: '工作项清单', icon: 'Tickets' } },
       { path: 'assets', name: 'assets', component: () => import('@/views/OrgAssets.vue'), meta: { title: '组织资产', icon: 'Notebook' } },
+      { path: 'timemachine', name: 'timemachine', component: () => import('@/views/TimeMachine.vue'), meta: { title: '时光机', icon: 'Clock' } },
     ],
   },
 ]
