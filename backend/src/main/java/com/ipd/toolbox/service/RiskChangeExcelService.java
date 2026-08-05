@@ -31,11 +31,14 @@ public class RiskChangeExcelService {
 
     static final Set<String> TYPES = Set.of("RISK", "CHANGE");
     private static final String[] RISK_HEADERS =
-            {"标题(必填)", "说明", "优先级(P0~P3)", "责任人ID", "处置措施", "处置期限(yyyy-MM-dd)"};
+            {"标题(必填)", "说明", "优先级(P0~P3)", "责任人ID", "处置措施", "处置期限(yyyy-MM-dd)",
+             "概率(1-5)", "影响(1-5)", "策略(AVOID/TRANSFER/MITIGATE/ACCEPT)"};
+    private static final Set<String> STRATEGIES = Set.of("AVOID", "TRANSFER", "MITIGATE", "ACCEPT");
     private static final String[] CHANGE_HEADERS = {"标题(必填)", "说明", "优先级(P0~P3)"};
 
     record ExcelRow(int rowNum, String title, String description, String priority,
-                    String ownerId, String mitigation, String dueDate) {
+                    String ownerId, String mitigation, String dueDate,
+                    String probability, String impact, String strategy) {
     }
 
     private final WorkItemService workItemService;
@@ -55,12 +58,13 @@ public class RiskChangeExcelService {
                 if (row.getRowNum() == 0) {
                     continue;
                 }
-                String[] c = new String[6];
-                for (int i = 0; i < 6; i++) {
+                String[] c = new String[9];
+                for (int i = 0; i < 9; i++) {
                     Cell cell = row.getCell(i);
                     c[i] = cell == null ? "" : fmt.formatCellValue(cell).trim();
                 }
-                out.add(new ExcelRow(row.getRowNum() + 1, c[0], c[1], c[2], c[3], c[4], c[5]));
+                out.add(new ExcelRow(row.getRowNum() + 1, c[0], c[1], c[2], c[3], c[4], c[5],
+                        c[6], c[7], c[8]));
             }
         }
         return out;
@@ -124,7 +128,17 @@ public class RiskChangeExcelService {
                     throw new BusinessException("处置期限格式须为 yyyy-MM-dd，当前: " + r.dueDate());
                 }
             }
-            if (!r.mitigation().isBlank() || !r.dueDate().isBlank()) {
+            Integer probability = parseScale(r.probability(), "概率");
+            Integer impact = parseScale(r.impact(), "影响");
+            String strategy = null;
+            if (!r.strategy().isBlank()) {
+                strategy = r.strategy().trim().toUpperCase();
+                if (!STRATEGIES.contains(strategy)) {
+                    throw new BusinessException("策略须为 AVOID/TRANSFER/MITIGATE/ACCEPT，当前: " + r.strategy());
+                }
+            }
+            if (!r.mitigation().isBlank() || !r.dueDate().isBlank()
+                    || probability != null || impact != null || strategy != null) {
                 ObjectNode ext = objectMapper.createObjectNode();
                 if (!r.mitigation().isBlank()) {
                     ext.put("mitigation", r.mitigation());
@@ -132,11 +146,35 @@ public class RiskChangeExcelService {
                 if (!r.dueDate().isBlank()) {
                     ext.put("dueDate", r.dueDate());
                 }
+                if (probability != null) {
+                    ext.put("probability", probability);
+                }
+                if (impact != null) {
+                    ext.put("impact", impact);
+                }
+                if (strategy != null) {
+                    ext.put("strategy", strategy);
+                }
                 w.setExtFields(ext.toString());
             }
         }
         workItemService.create(w, null);
         return 1;
+    }
+
+    private static Integer parseScale(String s, String label) {
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        try {
+            int v = Integer.parseInt(s.trim());
+            if (v < 1 || v > 5) {
+                throw new BusinessException(label + "须为 1~5，当前: " + s);
+            }
+            return v;
+        } catch (NumberFormatException e) {
+            throw new BusinessException(label + "须为 1~5 的整数，当前: " + s);
+        }
     }
 
     public byte[] template(String type) {
@@ -146,8 +184,8 @@ public class RiskChangeExcelService {
         String[] headers = "RISK".equals(type) ? RISK_HEADERS : CHANGE_HEADERS;
         String[][] samples = "RISK".equals(type)
                 ? new String[][]{
-                        {"关键元器件断供风险", "主控芯片供应商单一", "P1", "1", "引入第二供应商并完成认证", "2026-09-30"},
-                        {"整机噪音超标风险", "风道设计余量不足", "P2", "", "预研降噪方案", ""}}
+                        {"关键元器件断供风险", "主控芯片供应商单一", "P1", "1", "引入第二供应商并完成认证", "2026-09-30", "3", "5", "MITIGATE"},
+                        {"整机噪音超标风险", "风道设计余量不足", "P2", "", "预研降噪方案", "", "2", "3", "ACCEPT"}}
                 : new String[][]{
                         {"集尘座风道重新设计", "为降低噪音需调整风道结构", "P1"},
                         {"App 配网流程简化", "配网失败率高，需改为蓝牙辅助配网", "P2"}};

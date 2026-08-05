@@ -91,6 +91,7 @@ public class PerfService {
         reg("flow.staleCount", "停滞(>7天)工作项", "flow", 2, null, "件", "lower");
         reg("gov.changeCycleAvg", "变更平均处理周期", "gov", 2, null, "天", "lower");
         reg("gov.riskOnTimeRate", "风险按期处置率", "gov", 2, null, "%", "higher");
+        reg("gov.riskExposure", "风险敞口总量", "gov", 2, null, "", "lower");
         reg("gov.redlineRate", "红线满足率", "gov", 2, null, "%", "higher");
         reg("gov.metEvidenceRate", "MET条件证据完备率", "gov", 2, null, "%", "higher");
     }
@@ -352,9 +353,17 @@ public class PerfService {
 
         // 流程治理
         v.put("gov.changeCycleAvg", avg(perfMapper.changeCycleDays(projectId)));
-        v.put("gov.riskOnTimeRate", riskOnTimeRate(
-                workItemMapper.selectList(new QueryWrapper<WorkItem>()
-                        .eq("project_id", projectId).eq("type", WorkItemType.RISK.name())), today));
+        List<WorkItem> risks = workItemMapper.selectList(new QueryWrapper<WorkItem>()
+                .eq("project_id", projectId).eq("type", WorkItemType.RISK.name()));
+        v.put("gov.riskOnTimeRate", riskOnTimeRate(risks, today));
+        // 敞口总量：Open/Mitigating 风险的 p×i 求和（未评估 p/i 的按 0 计）
+        double exposure = risks.stream()
+                .filter(r -> "Open".equals(r.getStatus()) || "Mitigating".equals(r.getStatus()))
+                .mapToDouble(r -> {
+                    Integer e = RiskService.exposure(RiskService.parseExt(r.getExtFields(), objectMapper));
+                    return e == null ? 0 : e;
+                }).sum();
+        v.put("gov.riskExposure", exposure);
         Map<String, Object> rl = perfMapper.redlineStats(projectId);
         v.put("gov.redlineRate", rate(num(rl.get("satisfied")), num(rl.get("total"))));
         Map<String, Object> ev = perfMapper.metEvidenceStats(projectId);

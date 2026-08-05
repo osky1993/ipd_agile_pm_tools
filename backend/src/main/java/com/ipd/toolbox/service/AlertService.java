@@ -92,9 +92,15 @@ public class AlertService {
                 .notIn("status", "Closed", "Accepted"))) {
             LocalDate due = perfService.riskDueDate(r);
             if (due != null && due.isBefore(today)) {
+                RiskService.RiskExt ext = RiskService.parseExt(r.getExtFields());
+                Integer exposure = RiskService.exposure(ext);
+                String expTxt = exposure == null ? ""
+                        : "，敞口 " + ext.probability() + "×" + ext.impact() + "=" + exposure
+                                + "（" + ("HIGH".equals(RiskService.exposureLevel(exposure)) ? "高"
+                                        : "MED".equals(RiskService.exposureLevel(exposure)) ? "中" : "低") + "）";
                 out.add(new Alert("HIGH", "RISK_OVERDUE", "风险超期未处置",
                         r.getCode() + " " + r.getTitle() + "，期限 " + due + " 已过 "
-                                + ChronoUnit.DAYS.between(due, today) + " 天",
+                                + ChronoUnit.DAYS.between(due, today) + " 天" + expTxt,
                         "WORK_ITEM", r.getId(), r.getCode(), due));
             }
         }
