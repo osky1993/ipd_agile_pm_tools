@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { iterationApi, type Iteration } from '@/api/agile'
 import { workItemApi, type WorkItem } from '@/api/workitem'
@@ -28,6 +28,40 @@ const dragId = ref<number | null>(null)
 
 const createSprint = ref(false)
 const sForm = reactive({ name: '', goal: '', startDate: '', endDate: '' })
+
+// ---------- WIP 限制（按项目存 localStorage；0/空 = 不限） ----------
+const WIP_KEY = () => `wipLimits:${projectId.value ?? 0}`
+const wipLimits = ref<Record<string, number>>({})
+const wipDialog = ref(false)
+const wipForm = reactive<Record<string, number | undefined>>({})
+// WIP 管理关注"在制"，首尾列（Backlog/Accepted）天然不限
+const WIP_COLUMNS = ['Ready', 'In Progress', 'Verification']
+
+function loadWip() {
+  try {
+    wipLimits.value = JSON.parse(localStorage.getItem(WIP_KEY()) || '{}')
+  } catch {
+    wipLimits.value = {}
+  }
+}
+function openWipDialog() {
+  for (const c of WIP_COLUMNS) wipForm[c] = wipLimits.value[c] || undefined
+  wipDialog.value = true
+}
+function saveWip() {
+  const out: Record<string, number> = {}
+  for (const c of WIP_COLUMNS) {
+    if (wipForm[c] && wipForm[c]! > 0) out[c] = wipForm[c]!
+  }
+  wipLimits.value = out
+  localStorage.setItem(WIP_KEY(), JSON.stringify(out))
+  wipDialog.value = false
+}
+const wipOver = (col: string) => {
+  const limit = wipLimits.value[col]
+  return !!limit && columnItems(col).length > limit
+}
+watch(projectId, loadWip)
 
 const showHidden = ref(false)
 const currentSprint = computed(() => sprints.value.find((s) => s.id === sprintId.value))
@@ -141,6 +175,7 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
       <ProjectChips v-model="projectId" class="chips-flex" @change="loadSprints" />
       <div class="toolbar-right">
         <el-checkbox v-if="hiddenCount" v-model="showHidden">显示已隐藏（{{ hiddenCount }}）</el-checkbox>
+        <el-button @click="openWipDialog"><el-icon><Odometer /></el-icon>WIP 限制</el-button>
         <el-button type="primary" @click="createSprint = true"><el-icon><Plus /></el-icon>新建迭代</el-button>
       </div>
     </div>
@@ -192,7 +227,15 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
         @dragover.prevent
         @drop="onDrop(col)"
       >
-        <div class="col-head">{{ statusLabel(col) }}<el-tag size="small" round>{{ columnItems(col).length }}</el-tag></div>
+        <div class="col-head" :class="{ 'wip-over': wipOver(col) }">
+          {{ statusLabel(col) }}
+          <el-tooltip v-if="wipOver(col)" :content="`超出 WIP 上限 ${wipLimits[col]}，流动受阻——先完成再开始新的`" placement="top">
+            <el-tag size="small" round type="danger">{{ columnItems(col).length }}/{{ wipLimits[col] }} ⚠</el-tag>
+          </el-tooltip>
+          <el-tag v-else size="small" round>
+            {{ columnItems(col).length }}{{ wipLimits[col] ? `/${wipLimits[col]}` : '' }}
+          </el-tag>
+        </div>
         <div class="cards">
           <el-card
             v-for="w in columnItems(col)"
@@ -220,6 +263,20 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
     <p class="hint">拖动卡片到目标状态列即触发流转（走状态机与守卫校验）；点击标题打开详情。</p>
 
     <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" @changed="loadBoard" />
+
+    <!-- WIP 限制设置 -->
+    <el-dialog v-model="wipDialog" title="WIP 限制（按项目保存，0 或留空为不限）" width="380px">
+      <el-form label-width="90px">
+        <el-form-item v-for="c in WIP_COLUMNS" :key="c" :label="statusLabel(c)">
+          <el-input-number v-model="wipForm[c]" :min="0" :max="99" placeholder="不限" style="width:140px" />
+        </el-form-item>
+      </el-form>
+      <p class="hint">超限时列头变红提示——WIP 限制是流动管理的抓手：先完成，再开始。</p>
+      <template #footer>
+        <el-button @click="wipDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveWip">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="createSprint" title="新建迭代" width="440px">
       <el-form label-width="72px">
@@ -256,6 +313,7 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
 .backlog, .column { flex: 1 0 200px; min-width: 200px; background: #f0f2f5; border-radius: 8px; padding: 8px; }
 .backlog { background: #eef1f6; }
 .col-head { font-weight: 600; font-size: 13px; padding: 4px 6px 10px; display: flex; justify-content: space-between; align-items: center; }
+.col-head.wip-over { color: #f56c6c; background: #fef0f0; border-radius: 6px; }
 .cards { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
 .card { cursor: grab; }
 .card :deep(.card-body) { padding: 10px; }
