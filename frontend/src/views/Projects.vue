@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import http from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
-import { versionApi, stageApi, criterionApi, type ProductVersion, type StageGate, type GateCriterion } from '@/api/catalog'
+import { versionApi, stageApi, criterionApi, type ProductVersion, type StageGate, type GateCriterion, type CriterionTemplate } from '@/api/catalog'
 
 interface Project {
   id: number
@@ -79,6 +79,7 @@ async function openManage(row: Project) {
   current.value = row
   activeTab.value = 'version'
   manageVisible.value = true
+  loadTemplates()
   await refreshCatalog()
 }
 
@@ -114,6 +115,22 @@ async function saveVersionDate(row: ProductVersion, field: 'planReleaseDate' | '
 async function saveStageDate(row: StageGate, field: 'planDate' | 'forecastDate') {
   await stageApi.update(row.id, { [field]: row[field] })
   ElMessage.success('日期已保存')
+}
+
+// ---------- DCP 条件模板 ----------
+const templates = ref<CriterionTemplate[]>([])
+const tplForm = reactive({ key: '', stageGateId: undefined as number | undefined })
+const tplPreview = computed(() => templates.value.find((t) => t.key === tplForm.key))
+
+async function loadTemplates() {
+  if (!templates.value.length) templates.value = await criterionApi.templates()
+}
+
+async function applyTemplate() {
+  if (!current.value || !tplForm.key || !tplForm.stageGateId) return ElMessage.warning('请选择模板和目标阶段/DCP')
+  const r = await criterionApi.applyTemplate(current.value.id, tplForm.stageGateId, tplForm.key)
+  ElMessage.success(`已铺 ${r.created} 条${r.skipped ? `，跳过已存在 ${r.skipped} 条` : ''}`)
+  await refreshCatalog()
 }
 
 async function addCriterion() {
@@ -236,6 +253,26 @@ onMounted(load)
           </el-table>
 
           <el-divider content-position="left">DCP 准入条件（占位录入，完整评审在 DCP 页）</el-divider>
+          <!-- 从模板一键铺条件 -->
+          <div class="add-row" style="margin-bottom:8px">
+            <el-select v-model="tplForm.key" size="small" placeholder="选择条件模板" style="width:220px">
+              <el-option v-for="t in templates" :key="t.key" :label="`${t.name}（${t.items.length}条）`" :value="t.key" />
+            </el-select>
+            <el-select v-model="tplForm.stageGateId" size="small" placeholder="目标阶段/DCP" style="width:180px">
+              <el-option v-for="s in stages" :key="s.id" :label="`${s.stageName}/${s.gateName}`" :value="s.id" />
+            </el-select>
+            <el-button size="small" type="primary" plain @click="applyTemplate">一键铺条件</el-button>
+          </div>
+          <el-alert v-if="tplPreview" type="info" :closable="false" style="margin-bottom:8px">
+            <template #title>
+              {{ tplPreview.note }}——将创建：
+              <el-tag v-for="(it, i) in tplPreview.items" :key="i" size="small"
+                :type="it.redline ? 'danger' : 'info'" style="margin:2px 3px">
+                [{{ it.domain }}] {{ it.criterion }}{{ it.redline ? ' ●红线' : '' }}
+              </el-tag>
+              （已存在同文本条件会自动跳过）
+            </template>
+          </el-alert>
           <div class="add-row">
             <el-select v-model="cForm.domain" size="small" style="width:90px">
               <el-option v-for="d in DOMAINS" :key="d" :label="d" :value="d" />

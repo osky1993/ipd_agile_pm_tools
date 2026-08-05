@@ -12,9 +12,27 @@ import java.util.List;
 public class GateCriterionController {
 
     private final GateCriterionService service;
+    private final com.ipd.toolbox.service.CriterionTemplateService templateService;
 
-    public GateCriterionController(GateCriterionService service) {
+    public GateCriterionController(GateCriterionService service,
+                                   com.ipd.toolbox.service.CriterionTemplateService templateService) {
         this.service = service;
+        this.templateService = templateService;
+    }
+
+    /** DCP 条件模板库（各决策评审点的典型条件，含红线标记）。 */
+    @GetMapping("/templates")
+    public Result<List<com.ipd.toolbox.service.CriterionTemplateService.Template>> templates() {
+        return Result.ok(templateService.templates());
+    }
+
+    public record ApplyTemplateRequest(Long projectId, Long stageGateId, String templateKey) {
+    }
+
+    /** 一键铺条件：应用模板到指定 gate，同文本条件自动跳过（可重复应用）。 */
+    @PostMapping("/apply-template")
+    public Result<java.util.Map<String, Object>> applyTemplate(@RequestBody ApplyTemplateRequest req) {
+        return Result.ok(templateService.apply(req.projectId(), req.stageGateId(), req.templateKey()));
     }
 
     @GetMapping

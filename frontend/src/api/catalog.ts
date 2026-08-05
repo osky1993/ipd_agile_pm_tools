@@ -58,11 +58,28 @@ export const stageApi = {
   update: (id: number, data: Partial<StageGate>) => http.put<any, StageGate>(`/stage-gates/${id}`, data),
 }
 
+export interface CriterionTemplateItem {
+  domain: string
+  criterion: string
+  evidenceReq?: string
+  redline: boolean
+}
+
+export interface CriterionTemplate {
+  key: string
+  name: string
+  note: string
+  items: CriterionTemplateItem[]
+}
+
 export const criterionApi = {
   list: (projectId: number, stageGateId?: number) =>
     http.get<any, GateCriterion[]>('/gate-criteria', { params: { projectId, stageGateId } }),
   create: (data: Partial<GateCriterion>) => http.post<any, GateCriterion>('/gate-criteria', data),
   update: (id: number, data: Partial<GateCriterion>) => http.put<any, GateCriterion>(`/gate-criteria/${id}`, data),
+  templates: () => http.get<any, CriterionTemplate[]>('/gate-criteria/templates'),
+  applyTemplate: (projectId: number, stageGateId: number, templateKey: string) =>
+    http.post<any, { created: number; skipped: number; codes: string[] }>('/gate-criteria/apply-template', { projectId, stageGateId, templateKey }),
 }
 
 export const treeApi = {
