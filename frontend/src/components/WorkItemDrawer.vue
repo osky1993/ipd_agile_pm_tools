@@ -66,6 +66,7 @@ async function loadAll(id: number) {
   try {
     const prevProject = item.value?.projectId
     item.value = await workItemApi.get(id)
+    loadWsjf()
     if (prevProject !== item.value.projectId) {
       // 换项目：清空目标候选缓存与表单，避免跨项目串数据
       targetItems.value = []
@@ -103,6 +104,39 @@ watch(
   { immediate: true },
 )
 
+// ---------- WSJF 轻量评分（价值类工作项的排序辅助，存 ext_fields.wsjf） ----------
+const WSJF_TYPES = ['CAPABILITY', 'REQUIREMENT', 'STORY']
+const wsjf = ref<{ bv?: number; tc?: number; rr?: number; size?: number }>({})
+const showWsjf = computed(() => !!item.value && WSJF_TYPES.includes(item.value.type))
+const wsjfScore = computed(() => {
+  const { bv, tc, rr, size } = wsjf.value
+  if (!size || size <= 0) return null
+  const num = (bv ?? 0) + (tc ?? 0) + (rr ?? 0)
+  return num > 0 ? Math.round((num / size) * 10) / 10 : null
+})
+function loadWsjf() {
+  try {
+    wsjf.value = item.value?.extFields ? JSON.parse(item.value.extFields).wsjf ?? {} : {}
+  } catch {
+    wsjf.value = {}
+  }
+}
+/** 合并写回 ext_fields（保留 mitigation/dueDate 等既有键；四因子全空时移除 wsjf 键） */
+function mergedExtFields(): string | undefined {
+  if (!showWsjf.value) return item.value?.extFields ?? undefined
+  let ext: Record<string, unknown> = {}
+  try {
+    ext = item.value?.extFields ? JSON.parse(item.value.extFields) : {}
+  } catch { /* 坏 JSON 以空对象重建 */ }
+  const { bv, tc, rr, size } = wsjf.value
+  if (bv || tc || rr || size) {
+    ext.wsjf = { bv, tc, rr, size }
+  } else {
+    delete ext.wsjf
+  }
+  return Object.keys(ext).length ? JSON.stringify(ext) : undefined
+}
+
 async function saveBasic() {
   if (!item.value) return
   await workItemApi.update(item.value.id, {
@@ -115,6 +149,7 @@ async function saveBasic() {
     productVersionId: item.value.productVersionId,
     baselineDate: item.value.baselineDate,
     forecastDate: item.value.forecastDate,
+    extFields: mergedExtFields(),
   })
   ElMessage.success('已保存')
   await loadAll(item.value.id)
@@ -246,6 +281,17 @@ const statusType = (s: string) => {
                 <el-col :span="12"><el-form-item label="基线日期"><el-date-picker v-model="item.baselineDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
                 <el-col :span="12"><el-form-item label="预测日期"><el-date-picker v-model="item.forecastDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
               </el-row>
+              <!-- WSJF 轻量评分（价值/紧迫/风险降低 ÷ 规模，1~10 分） -->
+              <el-form-item v-if="showWsjf" label="WSJF">
+                <div class="wsjf-row">
+                  <span class="wsjf-f">价值<el-input-number v-model="wsjf.bv" :min="1" :max="10" size="small" controls-position="right" /></span>
+                  <span class="wsjf-f">紧迫<el-input-number v-model="wsjf.tc" :min="1" :max="10" size="small" controls-position="right" /></span>
+                  <span class="wsjf-f">降险<el-input-number v-model="wsjf.rr" :min="1" :max="10" size="small" controls-position="right" /></span>
+                  <span class="wsjf-f">规模<el-input-number v-model="wsjf.size" :min="1" :max="10" size="small" controls-position="right" /></span>
+                  <el-tag v-if="wsjfScore != null" type="warning" effect="dark">{{ wsjfScore }}</el-tag>
+                  <span v-else class="wsjf-hint">四项填齐自动计分</span>
+                </div>
+              </el-form-item>
               <el-form-item v-if="item.acceptedBy" label="验收">
                 <span class="accepted">验收人 #{{ item.acceptedBy }} · {{ item.acceptedAt }}</span>
               </el-form-item>
@@ -324,6 +370,10 @@ const statusType = (s: string) => {
 .md-ro { width: 100%; position: relative; padding-right: 44px; min-height: 24px; }
 .md-empty { color: #c0c4cc; font-size: 13px; }
 .md-edit-btn { position: absolute; right: 0; top: 0; }
+.wsjf-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wsjf-f { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #909399; }
+.wsjf-f :deep(.el-input-number) { width: 74px; }
+.wsjf-hint { font-size: 12px; color: #c0c4cc; }
 .accepted { color: #67c23a; font-size: 13px; }
 .reason { color: #909399; }
 </style>

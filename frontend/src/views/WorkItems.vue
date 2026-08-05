@@ -22,6 +22,18 @@ const currentId = ref<number | null>(null)
 const createVisible = ref(false)
 const createForm = ref({ type: 'REQUIREMENT', title: '' })
 
+/** WSJF 分 = (价值+紧迫+降险)/规模，存 ext_fields.wsjf；未评分返回 null */
+function wsjfScore(w: WorkItem): number | null {
+  try {
+    const s = w.extFields ? JSON.parse(w.extFields).wsjf : null
+    if (!s?.size) return null
+    const num = (s.bv ?? 0) + (s.tc ?? 0) + (s.rr ?? 0)
+    return num > 0 ? Math.round((num / s.size) * 10) / 10 : null
+  } catch {
+    return null
+  }
+}
+
 const statusType = (s: string) => {
   if (['Accepted', 'Closed', 'Verified', 'Approved'].includes(s)) return 'success'
   if (['Verification', 'Retesting', 'Impact Analysed'].includes(s)) return 'warning'
@@ -226,6 +238,13 @@ onMounted(async () => {
         <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status, row.type) }}</el-tag></template>
       </el-table-column>
       <el-table-column prop="priority" label="优先级" width="80" />
+      <el-table-column label="WSJF" width="90" sortable
+        :sort-method="(a: WorkItem, b: WorkItem) => (wsjfScore(a) ?? -1) - (wsjfScore(b) ?? -1)">
+        <template #default="{ row }">
+          <el-tag v-if="wsjfScore(row) != null" size="small" type="warning">{{ wsjfScore(row) }}</el-tag>
+          <span v-else class="wsjf-none">—</span>
+        </template>
+      </el-table-column>
       <el-table-column label="责任人" width="100">
         <template #default="{ row }">{{ users.label(row.ownerId) }}</template>
       </el-table-column>
@@ -351,4 +370,5 @@ onMounted(async () => {
 .batch-count { font-size: 13px; color: #409eff; font-weight: 600; }
 .pf-result { margin-top: 10px; }
 .pf-list { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
+.wsjf-none { color: #dcdfe6; }
 </style>
