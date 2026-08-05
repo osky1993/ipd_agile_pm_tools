@@ -101,6 +101,11 @@ export const batchApi = {
   }) => http.post<any, BatchItemResult[]>('/work-items/batch', req),
 }
 
+export const riskApi = {
+  /** 风险任务化：按处置措施生成应对 TASK（TASK -affects→ RISK） */
+  mitigationTask: (riskId: number) => http.post<any, WorkItem>(`/risks/${riskId}/mitigation-task`),
+}
+
 export const riskChangeExcelApi = {
   templateUrl: (type: 'RISK' | 'CHANGE') => `/api/work-items/import-excel-template.xlsx?type=${type}`,
   importExcel: (projectId: number, type: 'RISK' | 'CHANGE', file: File) => {

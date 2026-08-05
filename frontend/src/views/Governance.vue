@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { evidenceApi, decisionApi, type Evidence, type Decision } from '@/api/governance'
 import { metricsApi, type MatrixRow } from '@/api/metrics'
-import { workItemApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
+import { workItemApi, riskApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
 import { statusLabel, decisionLabel, decisionTypeLabel, testResultLabel } from '@/utils/labels'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
@@ -24,7 +24,62 @@ const drawerVisible = ref(false)
 const currentId = ref<number | null>(null)
 
 const riskDialog = ref(false)
-const riskForm = reactive({ title: '', ownerId: undefined as number | undefined, mitigation: '', dueDate: '' })
+const riskForm = reactive({
+  title: '', ownerId: undefined as number | undefined, mitigation: '', dueDate: '',
+  probability: undefined as number | undefined, impact: undefined as number | undefined,
+  strategy: '' as string,
+})
+/** 编辑态：非空表示在编辑已有风险（合并写回 ext，保留 wsjf 等既有键） */
+const editingRisk = ref<WorkItem | null>(null)
+
+const STRATEGY_LABEL: Record<string, string> = {
+  AVOID: '规避', TRANSFER: '转移', MITIGATE: '减轻', ACCEPT: '接受',
+}
+
+function openRiskDialog(w?: WorkItem) {
+  editingRisk.value = w ?? null
+  const ext = w ? riskExt(w) : {}
+  riskForm.title = w?.title ?? ''
+  riskForm.ownerId = w?.ownerId ?? undefined
+  riskForm.mitigation = ext.mitigation ?? ''
+  riskForm.dueDate = ext.dueDate ?? ''
+  riskForm.probability = ext.probability ?? undefined
+  riskForm.impact = ext.impact ?? undefined
+  riskForm.strategy = ext.strategy ?? ''
+  riskDialog.value = true
+}
+
+/** 敞口 = 概率×影响；等级 高≥15/中≥8/低 */
+function exposure(w: WorkItem): number | null {
+  const e = riskExt(w)
+  return e.probability && e.impact ? e.probability * e.impact : null
+}
+const exposureTag = (v: number | null) =>
+  v == null ? 'info' : v >= 15 ? 'danger' : v >= 8 ? 'warning' : 'success'
+
+// 5×5 矩阵：格子 key `p-i`
+const matrixCell = ref<{ p: number; i: number } | null>(null)
+const matrixCellRisks = computed(() =>
+  matrixCell.value
+    ? risks.value.filter((w) => {
+        const e = riskExt(w)
+        return e.probability === matrixCell.value!.p && e.impact === matrixCell.value!.i
+          && !['Closed', 'Accepted'].includes(w.status)
+      })
+    : [])
+function cellCount(p: number, i: number): number {
+  return risks.value.filter((w) => {
+    const e = riskExt(w)
+    return e.probability === p && e.impact === i && !['Closed', 'Accepted'].includes(w.status)
+  }).length
+}
+const cellLevel = (p: number, i: number) => (p * i >= 15 ? 'high' : p * i >= 8 ? 'med' : 'low')
+
+async function genMitigationTask(w: WorkItem) {
+  const t = await riskApi.mitigationTask(w.id)
+  ElMessage.success(`已生成应对任务 ${t.code}（affects 链已建立）`)
+  await loadAll()
+}
 
 // 风险 Excel 导入
 const riskImportDialog = ref(false)
@@ -53,12 +108,13 @@ function openPreview(e: Evidence) { previewRow.value = e; previewDialog.value = 
 
 const today = new Date().toISOString().slice(0, 10)
 
-function riskExt(w: WorkItem): { mitigation?: string; dueDate?: string } {
+function riskExt(w: WorkItem): { mitigation?: string; dueDate?: string; probability?: number; impact?: number; strategy?: string } {
   try { return w.extFields ? JSON.parse(w.extFields) : {} } catch { return {} }
 }
 function isOverdue(w: WorkItem): boolean {
   const due = riskExt(w).dueDate
-  return !!due && due < today && w.status !== 'Closed'
+  // 与后端预警口径一致：Closed 与 Accepted（已接受）都不算超期
+  return !!due && due < today && !['Closed', 'Accepted'].includes(w.status)
 }
 const riskStatusType = (s: string) =>
   s === 'Closed' ? 'success' : s === 'Accepted' ? 'warning' : s === 'Mitigating' ? '' : 'danger'
@@ -82,16 +138,32 @@ async function loadAll() {
 
 async function submitRisk() {
   if (!projectId.value || !riskForm.title) return ElMessage.warning('风险标题必填')
-  await workItemApi.create({
-    projectId: projectId.value,
-    type: 'RISK',
-    title: riskForm.title,
-    ownerId: riskForm.ownerId,
-    extFields: JSON.stringify({ mitigation: riskForm.mitigation, dueDate: riskForm.dueDate || null }),
-  })
-  ElMessage.success('已登记风险')
+  // 合并写回：编辑时以既有 ext 为底保留未知键（如 wsjf），风险键覆盖
+  let ext: Record<string, unknown> = {}
+  if (editingRisk.value) {
+    try { ext = editingRisk.value.extFields ? JSON.parse(editingRisk.value.extFields) : {} } catch { ext = {} }
+  }
+  ext.mitigation = riskForm.mitigation || null
+  ext.dueDate = riskForm.dueDate || null
+  ext.probability = riskForm.probability ?? null
+  ext.impact = riskForm.impact ?? null
+  ext.strategy = riskForm.strategy || null
+  const extFields = JSON.stringify(ext)
+
+  if (editingRisk.value) {
+    await workItemApi.update(editingRisk.value.id, {
+      title: riskForm.title, ownerId: riskForm.ownerId, extFields,
+    })
+    ElMessage.success('风险已更新')
+  } else {
+    await workItemApi.create({
+      projectId: projectId.value, type: 'RISK', title: riskForm.title,
+      ownerId: riskForm.ownerId, extFields,
+    })
+    ElMessage.success('已登记风险')
+  }
   riskDialog.value = false
-  riskForm.title = ''; riskForm.ownerId = undefined; riskForm.mitigation = ''; riskForm.dueDate = ''
+  editingRisk.value = null
   await loadAll()
 }
 
@@ -147,7 +219,7 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
       <el-tab-pane name="risk">
         <template #label>风险 ({{ risks.length }})<el-badge v-if="overdueCount" :value="overdueCount" class="badge" type="danger" /></template>
         <div class="sub-bar">
-          <el-button type="primary" size="small" @click="riskDialog = true"><el-icon><Plus /></el-icon>登记风险</el-button>
+          <el-button type="primary" size="small" @click="openRiskDialog()"><el-icon><Plus /></el-icon>登记风险</el-button>
           <el-button size="small" @click="riskImportDialog = true"><el-icon><Upload /></el-icon>Excel 导入</el-button>
         </div>
         <!-- 风险 Excel 导入 -->
@@ -170,9 +242,53 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
             <el-button type="primary" @click="submitRiskImport">导入</el-button>
           </template>
         </el-dialog>
+        <!-- 5×5 概率×影响矩阵（纯 CSS grid，点击格子下钻；只统计未闭环风险） -->
+        <div class="matrix-wrap">
+          <div class="matrix">
+            <div class="mx-corner">概率↑<br/>影响→</div>
+            <div v-for="i in 5" :key="'h' + i" class="mx-axis">{{ i }}</div>
+            <template v-for="p in 5" :key="'r' + p">
+              <div class="mx-axis">{{ 6 - p }}</div>
+              <div v-for="i in 5" :key="`${6 - p}-${i}`" class="mx-cell" :class="cellLevel(6 - p, i)"
+                @click="cellCount(6 - p, i) && (matrixCell = { p: 6 - p, i })">
+                <span v-if="cellCount(6 - p, i)" class="mx-count">{{ cellCount(6 - p, i) }}</span>
+              </div>
+            </template>
+          </div>
+          <div class="mx-legend">
+            <span><i class="mx-dot high" />高（敞口≥15）</span>
+            <span><i class="mx-dot med" />中（≥8）</span>
+            <span><i class="mx-dot low" />低</span>
+            <span class="mx-note">仅统计未闭环风险 · 点击格子查看清单</span>
+          </div>
+        </div>
+        <!-- 格子下钻 -->
+        <el-dialog :model-value="!!matrixCell" width="560px" @close="matrixCell = null"
+          :title="matrixCell ? `概率 ${matrixCell.p} × 影响 ${matrixCell.i}（敞口 ${matrixCell.p * matrixCell.i}）` : ''">
+          <el-table :data="matrixCellRisks" size="small" border class="clickable" @row-click="openRisk">
+            <el-table-column prop="code" label="编号" width="130" />
+            <el-table-column prop="title" label="风险" show-overflow-tooltip />
+            <el-table-column label="状态" width="100">
+              <template #default="{ row }">{{ statusLabel(row.status, 'RISK') }}</template>
+            </el-table-column>
+          </el-table>
+        </el-dialog>
+
         <el-table :data="risks" border @row-click="openRisk" class="clickable">
           <el-table-column prop="code" label="编号" width="130" />
           <el-table-column prop="title" label="风险" show-overflow-tooltip />
+          <el-table-column label="敞口" width="110" sortable
+            :sort-method="(a: WorkItem, b: WorkItem) => (exposure(a) ?? -1) - (exposure(b) ?? -1)">
+            <template #default="{ row }">
+              <el-tag v-if="exposure(row) != null" size="small" :type="exposureTag(exposure(row))">
+                {{ riskExt(row).probability }}×{{ riskExt(row).impact }}={{ exposure(row) }}
+              </el-tag>
+              <span v-else class="muted">未评估</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="策略" width="70">
+            <template #default="{ row }">{{ riskExt(row).strategy ? STRATEGY_LABEL[riskExt(row).strategy!] ?? riskExt(row).strategy : '—' }}</template>
+          </el-table-column>
           <el-table-column label="处置措施" show-overflow-tooltip>
             <template #default="{ row }">{{ riskExt(row).mitigation }}</template>
           </el-table-column>
@@ -189,6 +305,12 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
           </el-table-column>
           <el-table-column label="状态" width="110">
             <template #default="{ row }"><el-tag size="small" :type="riskStatusType(row.status)">{{ statusLabel(row.status, 'RISK') }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="150">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click.stop="openRiskDialog(row)">编辑</el-button>
+              <el-button link type="primary" size="small" @click.stop="genMitigationTask(row)">生成应对任务</el-button>
+            </template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -238,17 +360,37 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
 
     <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" @changed="loadAll" />
 
-    <!-- 登记风险 -->
-    <el-dialog v-model="riskDialog" title="登记风险" width="460px">
+    <!-- 登记/编辑风险 -->
+    <el-dialog v-model="riskDialog" :title="editingRisk ? `编辑风险 ${editingRisk.code}` : '登记风险'" width="500px">
       <el-form label-width="80px">
         <el-form-item label="风险描述"><el-input v-model="riskForm.title" /></el-form-item>
         <el-form-item label="责任人"><UserSelect v-model="riskForm.ownerId" /></el-form-item>
+        <el-form-item label="概率×影响">
+          <div class="pi-row">
+            <el-select v-model="riskForm.probability" placeholder="概率" clearable style="width:110px">
+              <el-option v-for="n in 5" :key="n" :label="`概率 ${n}`" :value="n" />
+            </el-select>
+            <span class="pi-x">×</span>
+            <el-select v-model="riskForm.impact" placeholder="影响" clearable style="width:110px">
+              <el-option v-for="n in 5" :key="n" :label="`影响 ${n}`" :value="n" />
+            </el-select>
+            <el-tag v-if="riskForm.probability && riskForm.impact" size="small"
+              :type="exposureTag(riskForm.probability * riskForm.impact)">
+              敞口 {{ riskForm.probability * riskForm.impact }}
+            </el-tag>
+          </div>
+        </el-form-item>
+        <el-form-item label="应对策略">
+          <el-select v-model="riskForm.strategy" clearable placeholder="选择策略" style="width:100%">
+            <el-option v-for="(l, k) in STRATEGY_LABEL" :key="k" :label="l" :value="k" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="处置措施"><el-input v-model="riskForm.mitigation" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="期限"><el-date-picker v-model="riskForm.dueDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="riskDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitRisk">登记</el-button>
+        <el-button type="primary" @click="submitRisk">{{ editingRisk ? '保存' : '登记' }}</el-button>
       </template>
     </el-dialog>
 
@@ -291,4 +433,26 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
 .hint { color: #909399; font-size: 12px; margin-top: 10px; }
 .badge { margin-left: 6px; }
 .imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
+
+/* 5×5 概率×影响矩阵 */
+.matrix-wrap { display: flex; align-items: flex-end; gap: 18px; margin-bottom: 14px; flex-wrap: wrap; }
+.matrix { display: grid; grid-template-columns: 56px repeat(5, 44px); grid-auto-rows: 36px; gap: 3px; }
+.mx-corner { font-size: 10px; color: #909399; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.3; }
+.mx-axis { font-size: 12px; color: #909399; display: flex; align-items: center; justify-content: center; }
+.mx-cell { border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: default; transition: transform .1s; }
+.mx-cell.low { background: rgba(103, 194, 58, .18); }
+.mx-cell.med { background: rgba(230, 162, 60, .28); }
+.mx-cell.high { background: rgba(245, 108, 108, .32); }
+.mx-cell:has(.mx-count) { cursor: pointer; }
+.mx-cell:has(.mx-count):hover { transform: scale(1.08); }
+.mx-count { background: #303133; color: #fff; border-radius: 10px; min-width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; padding: 0 5px; }
+.mx-legend { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #909399; padding-bottom: 4px; }
+.mx-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.mx-dot.low { background: rgba(103, 194, 58, .5); }
+.mx-dot.med { background: rgba(230, 162, 60, .6); }
+.mx-dot.high { background: rgba(245, 108, 108, .6); }
+.mx-note { color: #c0c4cc; }
+.muted { color: #c0c4cc; font-size: 12px; }
+.pi-row { display: flex; align-items: center; gap: 8px; }
+.pi-x { color: #909399; }
 </style>
