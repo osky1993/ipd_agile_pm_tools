@@ -12,6 +12,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/report/dcp/:gateId', name: 'report-dcp', component: () => import('@/views/report/DcpReport.vue'), meta: { title: 'DCP 决策包', hidden: true } },
   { path: '/report/weekly/:projectId', name: 'report-weekly', component: () => import('@/views/report/WeeklyReport.vue'), meta: { title: '项目周报', hidden: true } },
   { path: '/report/retro/:iterationId', name: 'report-retro', component: () => import('@/views/report/RetroReport.vue'), meta: { title: '迭代复盘', hidden: true } },
+  { path: '/report/closeout/:projectId', name: 'report-closeout', component: () => import('@/views/report/CloseoutReport.vue'), meta: { title: '结项报告', hidden: true } },
   {
     path: '/',
     component: () => import('@/layout/MainLayout.vue'),

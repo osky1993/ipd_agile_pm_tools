@@ -75,4 +75,31 @@ export function registerReadTools(server: McpServer) {
     inputSchema: { projectId: z.number().describe('项目 id') },
     annotations: { readOnlyHint: true },
   }, async ({ projectId }) => textResult(await api.get('/decisions', { projectId })))
+
+  server.registerTool('get_baseline_diff', {
+    description: '范围基线对比：当前 vs 项目最新基线——蔓延（基线外新增）/移除/完成/日期偏差/估算漂移。回答"承诺了什么、后来变成了什么"',
+    inputSchema: { projectId: z.number().describe('项目 id') },
+    annotations: { readOnlyHint: true },
+  }, async ({ projectId }) => {
+    const baselines = (await api.get('/baselines', { projectId })) as { id: number }[]
+    if (!baselines.length) return textResult({ message: '该项目尚未建立基线（DCP 评审通过时自动固化，或在基线管理页手动建立）' })
+    return textResult(await api.get(`/baselines/${baselines[0].id}/diff`))
+  })
+
+  server.registerTool('get_critical_path', {
+    description: '关键路径推演（CPM）：基于 depends_on/blocks 依赖与 estimate 推算 ES/EF/浮动/关键链与总工期（今天=T+0）。回答"哪件事拖一天全项目拖一天"',
+    inputSchema: { projectId: z.number().describe('项目 id') },
+    annotations: { readOnlyHint: true },
+  }, async ({ projectId }) => textResult(await api.get('/schedule/critical-path', { projectId })))
+
+  server.registerTool('list_lessons', {
+    description: '经验教训库（组织资产）：跨项目检索历史经验（类别 WELL/IMPROVE/PROCESS/TECH/SUPPLY/OTHER）',
+    inputSchema: {
+      keyword: z.string().optional().describe('关键词（搜标题/内容）'),
+      category: z.string().optional().describe('类别过滤'),
+      projectId: z.number().optional().describe('项目过滤（不传=全部项目）'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async ({ keyword, category, projectId }) =>
+    textResult(await api.get('/assets/lessons', { keyword, category, projectId })))
 }

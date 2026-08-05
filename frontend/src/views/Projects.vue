@@ -45,10 +45,35 @@ async function load() {
 }
 
 async function changeLifecycle(p: Project, status: string) {
+  // 结项前先跑检查，把未了事项摆到确认框里（非强制拦截，决定权在人）
+  if (status === 'CLOSED') {
+    const c = await http.get<any, { openRisks: number; unreviewedGates: number; openDefects: number; pendingChanges: number; unmetRedlines: number; clean: boolean }>(`/projects/${p.id}/closeout-check`)
+    const items = [
+      c.openRisks ? `未闭合风险 ${c.openRisks}` : '',
+      c.unreviewedGates ? `未评审 DCP ${c.unreviewedGates}` : '',
+      c.openDefects ? `未关缺陷 ${c.openDefects}` : '',
+      c.pendingChanges ? `在途变更 ${c.pendingChanges}` : '',
+      c.unmetRedlines ? `红线未满足 ${c.unmetRedlines}` : '',
+    ].filter(Boolean)
+    try {
+      await ElMessageBox.confirm(
+        c.clean
+          ? `结项检查各项已清零，确认结项「${p.name}」？关闭后不再产生预警。`
+          : `「${p.name}」存在未了事项：${items.join('、')}。结项即接受以上遗留，确认？`,
+        '结项确认', { type: c.clean ? 'info' : 'warning', confirmButtonText: '确认结项' },
+      )
+    } catch {
+      return
+    }
+    await http.put(`/projects/${p.id}`, { lifecycleStatus: status })
+    ElMessage.success('已结项（检查结果已写入审计）')
+    window.open(`/report/closeout/${p.id}`, '_blank')
+    await load()
+    return
+  }
   try {
     await ElMessageBox.confirm(
-      `将项目「${p.name}」的生命周期从 ${LIFECYCLE_LABEL[p.lifecycleStatus] ?? p.lifecycleStatus} 变更为 ${LIFECYCLE_LABEL[status]}？` +
-        (status === 'CLOSED' ? '关闭后驾驶舱不再产生预警。' : ''),
+      `将项目「${p.name}」的生命周期从 ${LIFECYCLE_LABEL[p.lifecycleStatus] ?? p.lifecycleStatus} 变更为 ${LIFECYCLE_LABEL[status]}？`,
       '生命周期变更', { type: 'warning' },
     )
   } catch {
