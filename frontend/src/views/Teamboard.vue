@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import * as echarts from 'echarts'
-import { teamApi, type TeamOverview, type Blocker, type Handoff } from '@/api/team'
+import { teamApi, type TeamOverview, type Blocker, type Handoff, type CpmResult } from '@/api/team'
 import ProjectChips from '@/components/ProjectChips.vue'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import { statusLabel } from '@/utils/labels'
@@ -72,10 +72,41 @@ function timeAgo(at: string | null): string {
   return `${Math.floor(h / 24)}天前`
 }
 
+// ---------- 关键路径（CPM）叠加 ----------
+const cpmOn = ref(false)
+const cpm = ref<CpmResult | null>(null)
+
+async function toggleCpm() {
+  if (cpmOn.value && projectId.value) {
+    try {
+      cpm.value = await teamApi.criticalPath(projectId.value)
+    } catch {
+      cpm.value = null
+    }
+  } else {
+    cpm.value = null
+  }
+  graphFingerprint = '' // 强制重绘
+  renderGraph()
+}
+
+const criticalNodes = computed(() => {
+  const list = cpm.value?.nodes.filter((n) => n.critical) ?? []
+  return [...list].sort((a, b) => a.es - b.es)
+})
+
 async function load() {
   if (!projectId.value) return
+  countdown.value = 60 // 先重置：任何请求失败都不能让倒计时卡在 0 引发每秒重试
   data.value = await teamApi.overview(projectId.value)
-  countdown.value = 60
+  if (cpmOn.value) {
+    try {
+      cpm.value = await teamApi.criticalPath(projectId.value)
+    } catch {
+      cpm.value = null
+    }
+    graphFingerprint = ''
+  }
   await nextTick()
   renderGraph()
 }
@@ -151,7 +182,10 @@ function dagLayout(nodes: { id: number }[], edges: { source: number; target: num
 function renderGraph() {
   const g = data.value?.graph
   if (!graphEl.value || !g) return
+  const cpmById = new Map((cpm.value?.nodes ?? []).map((n) => [n.id, n]))
+  const critEdges = new Set((cpm.value?.edges ?? []).filter((e) => e.critical).map((e) => `${e.from}>${e.to}`))
   const fp = g.nodes.map((n) => `${n.id}${n.status}${n.blocked}`).join() + '|' + g.edges.length
+    + '|' + (cpmOn.value ? `cpm${cpmById.size}` : '')
   if (!graphChart) graphChart = echarts.init(graphEl.value)
   else if (fp === graphFingerprint) return // 数据未变不重排，避免 force 抖动
   graphFingerprint = fp
@@ -168,8 +202,10 @@ function renderGraph() {
       formatter: (p: any) => {
         if (p.dataType === 'edge') return REL_ZH[p.data.relation] ?? p.data.relation
         const n = p.data.raw
+        const c = cpmById.get(n.id)
         return `<b>${n.code}</b> ${n.title}<br/>状态：${statusLabel(n.status, n.type)}${n.blocked ? '　<span style="color:#f56c6c">⛔被阻塞</span>' : ''}` +
-          (n.testBadge ? `<br/>验证用例：${n.testBadge === 'PASS' ? '✓ 通过' : n.testBadge === 'FAIL' ? '✗ 失败' : '○ 未执行'}` : '')
+          (n.testBadge ? `<br/>验证用例：${n.testBadge === 'PASS' ? '✓ 通过' : n.testBadge === 'FAIL' ? '✗ 失败' : '○ 未执行'}` : '') +
+          (c ? `<br/>${c.critical ? '<span style="color:#e6a23c">★ 关键路径</span>' : `浮动 ${c.slack} 天`}　工期 ${c.duration}d${c.estimated ? '' : '(未估算)'}　T+${c.es}→T+${c.ef}` : '')
       },
     },
     legend: { bottom: 0, textStyle: { color: '#c9d4e8', fontSize: 11 }, itemWidth: 12, itemHeight: 8,
@@ -197,7 +233,9 @@ function renderGraph() {
         symbolSize: Math.min(24 + n.degree * 3, 44),
         itemStyle: n.blocked
           ? { borderColor: '#f56c6c', borderWidth: 3, shadowColor: 'rgba(245,108,108,.5)', shadowBlur: 12 }
-          : { borderColor: SURFACE, borderWidth: 2 },
+          : cpmById.get(n.id)?.critical
+            ? { borderColor: '#e6a23c', borderWidth: 3, shadowColor: 'rgba(230,162,60,.55)', shadowBlur: 14 }
+            : { borderColor: SURFACE, borderWidth: 2 },
         label: n.testBadge === 'FAIL' ? { color: '#f56c6c' } : undefined,
       })),
       edges: g.edges.map((e) => {
@@ -206,11 +244,16 @@ function renderGraph() {
         // 同层或逆向（回边/环）加大弧度绕行，避免穿过节点
         const back = sx && tx && tx.x <= sx.x
         const sameRow = sx && tx && Math.abs(sx.y - tx.y) < 1 && Math.abs(tx.x - sx.x) > 200
+        const critical = critEdges.has(`${e.source}>${e.target}`)
         return {
           source: String(e.source),
           target: String(e.target),
           relation: e.relation,
-          lineStyle: { ...EDGE_STYLE[e.relation], curveness: back ? 0.45 : sameRow ? 0.25 : 0.12 },
+          lineStyle: {
+            ...EDGE_STYLE[e.relation],
+            curveness: back ? 0.45 : sameRow ? 0.25 : 0.12,
+            ...(critical ? { color: '#e6a23c', width: 3.5, shadowColor: 'rgba(230,162,60,.4)', shadowBlur: 6 } : {}),
+          },
         }
       }),
     }],
@@ -279,6 +322,10 @@ onUnmounted(() => {
             <div class="p-title">上下游依赖网络（左=上游 → 右=下游）
               <span v-if="data.graph.truncated" class="p-note">节点较多，已截取 60 个</span>
               <span class="p-note">点击节点查看/操作详情 · 可拖拽缩放</span>
+              <span class="cpm-toggle">
+                <el-switch v-model="cpmOn" size="small" @change="toggleCpm" />
+                <span class="cpm-lbl">关键路径</span>
+              </span>
             </div>
             <div v-if="data.graph.edges.length || data.graph.nodes.length" ref="graphEl" class="graph" />
             <div v-else class="graph-empty">
@@ -292,7 +339,32 @@ onUnmounted(() => {
               <span><i class="el-line parent" />分解(父子)</span>
               <span><i class="el-line affects" />缺陷影响</span>
               <span><i class="el-line changes" />变更波及</span>
+              <span v-if="cpmOn"><i class="el-line critical" />关键路径</span>
               <span class="el-shape">▲缺陷 ◆变更 ■任务 ●需求/能力</span>
+            </div>
+
+            <!-- 关键链清单（CPM 推演结果） -->
+            <div v-if="cpmOn && cpm" class="cpm-panel">
+              <template v-if="criticalNodes.length">
+                <div class="cpm-head">
+                  关键链 {{ criticalNodes.length }} 项 · 总工期 <b>T+{{ cpm.totalDuration }}</b> 天
+                  <span class="cpm-note">链上任一项拖 1 天，整体拖 1 天</span>
+                </div>
+                <div v-for="(n, i) in criticalNodes" :key="n.id" class="cpm-row" @click="openItem(n.id)">
+                  <span class="cpm-idx">{{ i + 1 }}</span>
+                  <span class="cpm-code">{{ n.code }}</span>
+                  <span class="cpm-title">{{ n.title }}</span>
+                  <span class="cpm-dur">{{ n.duration }}d<em v-if="!n.estimated">?</em></span>
+                  <span class="cpm-window">T+{{ n.es }} → T+{{ n.ef }}</span>
+                </div>
+                <div v-if="cpm.unestimatedCritical.length" class="cpm-warn">
+                  ⚠ 关键路径上 {{ cpm.unestimatedCritical.length }} 项未估算（{{ cpm.unestimatedCritical.join('、') }}），按 1 天推演，排期不可信——先补估算
+                </div>
+              </template>
+              <div v-else class="cpm-empty">无依赖网络可推演（未完成项之间没有 depends_on/blocks 关系）</div>
+              <div v-if="cpm.cycles.length" class="cpm-warn">
+                ⚠ 检测到 {{ cpm.cycles.length }} 处依赖成环，环上项已从推演中剔除——先解环
+              </div>
             </div>
           </section>
 
@@ -388,6 +460,25 @@ onUnmounted(() => {
 .col-pill { font-size: 12px; color: #8fa2c0; background: #0d1626; border-radius: 10px; padding: 2px 8px; }
 .col-pill b { color: #e8eef8; }
 .v-bad { color: #f56c6c !important; }
+
+/* 关键路径 */
+.cpm-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.cpm-lbl { font-size: 12px; color: #e6a23c; }
+.el-line.critical { background: #e6a23c; }
+.cpm-panel { margin-top: 10px; border-top: 1px solid #2a3a55; padding-top: 10px; }
+.cpm-head { font-size: 13px; color: #c9d4e8; margin-bottom: 8px; }
+.cpm-head b { color: #e6a23c; }
+.cpm-note { font-size: 11px; color: #8fa2c0; margin-left: 8px; }
+.cpm-row { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.cpm-row:hover { background: rgba(230,162,60,.08); }
+.cpm-idx { width: 18px; height: 18px; border-radius: 50%; background: rgba(230,162,60,.2); color: #e6a23c; display: flex; align-items: center; justify-content: center; font-size: 11px; flex: none; }
+.cpm-code { font-family: monospace; color: #8fa2c0; flex: none; }
+.cpm-title { color: #c9d4e8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.cpm-dur { color: #e6a23c; flex: none; }
+.cpm-dur em { color: #f56c6c; font-style: normal; }
+.cpm-window { color: #8fa2c0; flex: none; font-family: monospace; }
+.cpm-warn { margin-top: 8px; font-size: 12px; color: #e6a23c; background: rgba(230,162,60,.08); border-radius: 6px; padding: 6px 10px; }
+.cpm-empty { font-size: 12px; color: #8fa2c0; }
 
 .main { display: grid; grid-template-columns: 5fr 2fr; gap: 12px; align-items: start; }
 .left, .right { display: flex; flex-direction: column; gap: 12px; }

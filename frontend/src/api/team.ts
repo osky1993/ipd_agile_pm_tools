@@ -99,6 +99,37 @@ export interface TeamOverview {
   owners: OwnerLoad[]
 }
 
+export interface CpmNode {
+  id: number
+  code: string
+  title: string
+  status: string
+  duration: number
+  estimated: boolean
+  es: number
+  ef: number
+  ls: number
+  lf: number
+  slack: number
+  critical: boolean
+}
+
+export interface CpmEdge {
+  from: number
+  to: number
+  critical: boolean
+}
+
+export interface CpmResult {
+  nodes: CpmNode[]
+  edges: CpmEdge[]
+  criticalChain: number[]
+  totalDuration: number
+  unestimatedCritical: string[]
+  cycles: number[][]
+}
+
 export const teamApi = {
   overview: (projectId: number) => http.get<any, TeamOverview>('/team/overview', { params: { projectId } }),
+  criticalPath: (projectId: number) => http.get<any, CpmResult>('/schedule/critical-path', { params: { projectId } }),
 }
