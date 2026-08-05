@@ -24,6 +24,7 @@ class AlertServiceTest {
     private DecisionMapper decisionMapper;
     private GateCriterionMapper criterionMapper;
     private StageGateMapper stageGateMapper;
+    private TraceLinkMapper traceLinkMapper;
     private AlertService service;
 
     private final LocalDate today = LocalDate.of(2026, 8, 1);
@@ -40,8 +41,9 @@ class AlertServiceTest {
                 mock(WorkItemMapper.class), mock(PerfSnapshotMapper.class),
                 mock(IterationCommitmentMapper.class), mock(AuditService.class), new ObjectMapper());
         stageGateMapper = mock(StageGateMapper.class);
+        traceLinkMapper = mock(TraceLinkMapper.class);
         service = new AlertService(projectMapper, workItemMapper, decisionMapper,
-                criterionMapper, stageGateMapper, perfMapper, perfService);
+                criterionMapper, stageGateMapper, traceLinkMapper, perfMapper, perfService);
     }
 
     private WorkItem risk(Long id, String due, String status) {
@@ -190,6 +192,46 @@ class AlertServiceTest {
         assertEquals("DCP_APPROACHING", alerts.get(0).type());
     }
 
+    private com.ipd.toolbox.domain.entity.TraceLink link(String relation, Long sourceId, Long targetId) {
+        com.ipd.toolbox.domain.entity.TraceLink l = new com.ipd.toolbox.domain.entity.TraceLink();
+        l.setRelation(relation);
+        l.setSourceId(sourceId);
+        l.setTargetId(targetId);
+        return l;
+    }
+
+    private WorkItem item(Long id, String type, String status) {
+        WorkItem w = new WorkItem();
+        w.setId(id);
+        w.setCode("X-" + id);
+        w.setTitle("t" + id);
+        w.setType(type);
+        w.setStatus(status);
+        return w;
+    }
+
+    @Test
+    void 追溯完整性_无覆盖_无实现链_能力未分解() {
+        // req1: Ready 无 verifies → 仅"无测试覆盖"；req2: In Progress 无任何链 → 两条；
+        // req3: 有 verifies + parent_of 子项 → 无告警；cap4: 无子项 → 未分解
+        when(workItemMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                item(1L, "REQUIREMENT", "Ready"),
+                item(2L, "REQUIREMENT", "In Progress"),
+                item(3L, "REQUIREMENT", "Accepted"),
+                item(4L, "CAPABILITY", "Ready")));
+        when(traceLinkMapper.selectList(any(Wrapper.class))).thenReturn(List.of(
+                link("verifies", 99L, 3L),
+                link("parent_of", 3L, 88L)));
+        List<AlertService.Alert> alerts = service.traceGaps(1L);
+        assertEquals(4, alerts.size());
+        assertTrue(alerts.stream().allMatch(a -> "LOW".equals(a.severity())));
+        assertEquals(2, alerts.stream().filter(a -> "TRACE_NO_VERIFIES".equals(a.type())).count());
+        assertEquals(1, alerts.stream().filter(a -> "TRACE_NO_IMPLEMENTS".equals(a.type())
+                && "X-2".equals(a.refCode())).count());
+        assertEquals(1, alerts.stream().filter(a -> "TRACE_CAP_NO_CHILD".equals(a.type())
+                && "X-4".equals(a.refCode())).count());
+    }
+
     @Test
     void 排序_HIGH在前_同级按期限升序() {
         List<AlertService.Alert> unsorted = new java.util.ArrayList<>(List.of(
@@ -216,7 +258,8 @@ class AlertServiceTest {
         p.setLifecycleStatus("CLOSED");
         when(pm.selectById(1L)).thenReturn(p);
         AlertService closed = new AlertService(pm, workItemMapper, decisionMapper,
-                criterionMapper, stageGateMapper, mock(PerfMapper.class), mock(PerfService.class));
+                criterionMapper, stageGateMapper, traceLinkMapper,
+                mock(PerfMapper.class), mock(PerfService.class));
         assertTrue(closed.list(1L).isEmpty());
     }
 }

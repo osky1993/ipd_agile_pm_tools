@@ -6,6 +6,7 @@ import com.ipd.toolbox.domain.entity.Decision;
 import com.ipd.toolbox.domain.entity.GateCriterion;
 import com.ipd.toolbox.domain.entity.Project;
 import com.ipd.toolbox.domain.entity.StageGate;
+import com.ipd.toolbox.domain.entity.TraceLink;
 import com.ipd.toolbox.domain.entity.WorkItem;
 import com.ipd.toolbox.domain.enums.WorkItemType;
 import com.ipd.toolbox.mapper.*;
@@ -39,18 +40,20 @@ public class AlertService {
     private final DecisionMapper decisionMapper;
     private final GateCriterionMapper criterionMapper;
     private final StageGateMapper stageGateMapper;
+    private final TraceLinkMapper traceLinkMapper;
     private final PerfMapper perfMapper;
     private final PerfService perfService;
 
     public AlertService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                         DecisionMapper decisionMapper, GateCriterionMapper criterionMapper,
-                        StageGateMapper stageGateMapper,
+                        StageGateMapper stageGateMapper, TraceLinkMapper traceLinkMapper,
                         PerfMapper perfMapper, PerfService perfService) {
         this.projectMapper = projectMapper;
         this.workItemMapper = workItemMapper;
         this.decisionMapper = decisionMapper;
         this.criterionMapper = criterionMapper;
         this.stageGateMapper = stageGateMapper;
+        this.traceLinkMapper = traceLinkMapper;
         this.perfMapper = perfMapper;
         this.perfService = perfService;
     }
@@ -74,6 +77,7 @@ public class AlertService {
         out.addAll(wipStale(projectId, today));
         out.addAll(defectAging(projectId, today));
         out.addAll(dcpApproaching(projectId, today));
+        out.addAll(traceGaps(projectId));
         out.sort(Comparator
                 .comparing((Alert a) -> SEV_RANK.getOrDefault(a.severity(), 9))
                 .thenComparing(a -> a.due() == null ? LocalDate.MAX : a.due()));
@@ -230,6 +234,52 @@ public class AlertService {
                         name + " 计划评审日 " + plan + "（"
                                 + ChronoUnit.DAYS.between(today, plan) + " 天后）",
                         "STAGE_GATE", g.getId(), g.getCode(), plan));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 追溯完整性（LOW，断链主动暴露而非等人查矩阵）：
+     * ① 非 Backlog 需求无 verifies 入链（无测试覆盖）
+     * ② 进行中及以后的需求既无 implements 入链也无 parent_of 子项（无分解/实现链）
+     * ③ 非 Backlog 能力无 parent_of 出链（未分解出需求）
+     */
+    List<Alert> traceGaps(Long projectId) {
+        Set<Long> verified = new HashSet<>();
+        Set<Long> implemented = new HashSet<>();
+        Set<Long> hasChildren = new HashSet<>();
+        for (TraceLink l : traceLinkMapper.selectList(new QueryWrapper<TraceLink>()
+                .eq("project_id", projectId)
+                .in("relation", "verifies", "implements", "parent_of"))) {
+            switch (l.getRelation()) {
+                case "verifies" -> verified.add(l.getTargetId());
+                case "implements" -> implemented.add(l.getTargetId());
+                case "parent_of" -> hasChildren.add(l.getSourceId());
+            }
+        }
+        Set<String> started = Set.of("In Progress", "Verification", "Accepted");
+        List<Alert> out = new ArrayList<>();
+        for (WorkItem w : workItemMapper.selectList(new QueryWrapper<WorkItem>()
+                .eq("project_id", projectId)
+                .in("type", WorkItemType.REQUIREMENT.name(), WorkItemType.CAPABILITY.name())
+                .ne("status", "Backlog"))) {
+            if (WorkItemType.REQUIREMENT.name().equals(w.getType())) {
+                if (!verified.contains(w.getId())) {
+                    out.add(new Alert("LOW", "TRACE_NO_VERIFIES", "需求无测试覆盖",
+                            w.getCode() + " " + w.getTitle() + " 尚无 verifies 链（测试用例未关联）",
+                            "WORK_ITEM", w.getId(), w.getCode(), null));
+                }
+                if (started.contains(w.getStatus())
+                        && !implemented.contains(w.getId()) && !hasChildren.contains(w.getId())) {
+                    out.add(new Alert("LOW", "TRACE_NO_IMPLEMENTS", "需求无分解/实现链",
+                            w.getCode() + " " + w.getTitle() + " 已开工但无 implements 链且无子项",
+                            "WORK_ITEM", w.getId(), w.getCode(), null));
+                }
+            } else if (!hasChildren.contains(w.getId())) {
+                out.add(new Alert("LOW", "TRACE_CAP_NO_CHILD", "能力未分解需求",
+                        w.getCode() + " " + w.getTitle() + " 无 parent_of 子项",
+                        "WORK_ITEM", w.getId(), w.getCode(), null));
             }
         }
         return out;
