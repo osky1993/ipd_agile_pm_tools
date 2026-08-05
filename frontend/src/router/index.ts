@@ -10,6 +10,7 @@ const routes: RouteRecordRaw[] = [
   // 打印友好报告页（hidden：不进侧边栏菜单；独立于 MainLayout 便于 A4 排版）
   { path: '/report/project/:projectId', name: 'report-project', component: () => import('@/views/report/ProjectReport.vue'), meta: { title: '项目状态报告', hidden: true } },
   { path: '/report/dcp/:gateId', name: 'report-dcp', component: () => import('@/views/report/DcpReport.vue'), meta: { title: 'DCP 决策包', hidden: true } },
+  { path: '/report/weekly/:projectId', name: 'report-weekly', component: () => import('@/views/report/WeeklyReport.vue'), meta: { title: '项目周报', hidden: true } },
   {
     path: '/',
     component: () => import('@/layout/MainLayout.vue'),

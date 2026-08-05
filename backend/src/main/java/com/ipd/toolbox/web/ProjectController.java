@@ -12,9 +12,19 @@ import java.util.List;
 public class ProjectController {
 
     private final ProjectService service;
+    private final com.ipd.toolbox.service.WeeklyReportService weeklyReportService;
 
-    public ProjectController(ProjectService service) {
+    public ProjectController(ProjectService service,
+                             com.ipd.toolbox.service.WeeklyReportService weeklyReportService) {
         this.service = service;
+        this.weeklyReportService = weeklyReportService;
+    }
+
+    /** 周报数据：时间窗内的新增/流转/决策/证据（默认 7 天，上限 90）。 */
+    @GetMapping("/{id}/weekly")
+    public Result<com.ipd.toolbox.service.WeeklyReportService.Summary> weekly(
+            @PathVariable Long id, @RequestParam(defaultValue = "7") int days) {
+        return Result.ok(weeklyReportService.summary(id, days));
     }
 
     @GetMapping

@@ -129,6 +129,9 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
       <a v-if="projectId" :href="`/report/project/${projectId}`" target="_blank">
         <el-button type="primary" plain><el-icon><Printer /></el-icon>生成状态报告</el-button>
       </a>
+      <a v-if="projectId" :href="`/report/weekly/${projectId}`" target="_blank">
+        <el-button plain><el-icon><Calendar /></el-icon>生成周报</el-button>
+      </a>
       <a v-if="projectId" :href="metricsApi.exportCsvUrl(projectId)" target="_blank">
         <el-button><el-icon><Download /></el-icon>导出工作项 CSV</el-button>
       </a>
