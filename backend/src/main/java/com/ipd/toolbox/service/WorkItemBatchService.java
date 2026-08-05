@@ -19,9 +19,12 @@ public class WorkItemBatchService {
     public record BatchPatch(Long ownerId, String priority) {
     }
 
-    /** action: TRANSITION（toStatus/reason）| UPDATE（patch）| ASSIGN_ITERATION（iterationId，走 Ready 守卫） */
+    /**
+     * action: TRANSITION（toStatus/reason）| UPDATE（patch）| ASSIGN_ITERATION（iterationId，走 Ready 守卫）。
+     * dryRun=true 时仅预演校验（状态机/守卫全跑，不落库），逐条返回"会不会被拦、为什么"。
+     */
     public record BatchRequest(List<Long> ids, String action, String toStatus, String reason,
-                               Long iterationId, BatchPatch patch) {
+                               Long iterationId, BatchPatch patch, boolean dryRun) {
     }
 
     public record BatchItemResult(Long id, String code, boolean ok, String message) {
@@ -130,16 +133,30 @@ public class WorkItemBatchService {
             try {
                 code = workItemService.get(id).getCode();
                 switch (action) {
-                    case "TRANSITION" -> workItemService.transition(id, req.toStatus(), req.reason());
-                    case "UPDATE" -> {
-                        WorkItem patch = new WorkItem();
-                        patch.setOwnerId(req.patch().ownerId());
-                        patch.setPriority(req.patch().priority());
-                        workItemService.update(id, patch);
+                    case "TRANSITION" -> {
+                        if (req.dryRun()) {
+                            workItemService.preflight(id, req.toStatus(), req.reason());
+                        } else {
+                            workItemService.transition(id, req.toStatus(), req.reason());
+                        }
                     }
-                    case "ASSIGN_ITERATION" -> iterationService.assign(req.iterationId(), id);
+                    case "UPDATE" -> {
+                        if (!req.dryRun()) {
+                            WorkItem patch = new WorkItem();
+                            patch.setOwnerId(req.patch().ownerId());
+                            patch.setPriority(req.patch().priority());
+                            workItemService.update(id, patch);
+                        }
+                    }
+                    case "ASSIGN_ITERATION" -> {
+                        if (req.dryRun()) {
+                            iterationService.preflightAssign(req.iterationId(), id);
+                        } else {
+                            iterationService.assign(req.iterationId(), id);
+                        }
+                    }
                 }
-                out.add(new BatchItemResult(id, code, true, "OK"));
+                out.add(new BatchItemResult(id, code, true, req.dryRun() ? "[预检通过]" : "OK"));
             } catch (BusinessException e) { // GuardException 亦是其子类
                 out.add(new BatchItemResult(id, code, false, e.getMessage()));
             }

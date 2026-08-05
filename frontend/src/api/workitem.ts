@@ -97,6 +97,7 @@ export const batchApi = {
     reason?: string
     iterationId?: number
     patch?: { ownerId?: number | null; priority?: string | null }
+    dryRun?: boolean
   }) => http.post<any, BatchItemResult[]>('/work-items/batch', req),
 }
 

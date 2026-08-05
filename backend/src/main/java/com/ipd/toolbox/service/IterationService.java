@@ -100,7 +100,12 @@ public class IterationService {
      * 将工作项拉入迭代承诺。守卫#1 Ready：未满足验收条件/责任人/估算的工作项不能进入 Sprint 承诺（T303）。
      */
     @Transactional
-    public void assign(Long iterationId, Long workItemId) {
+    /** 进迭代预检（不落库）：迭代/工作项存在性 + Ready 守卫，批量 dry-run 用。 */
+    public void preflightAssign(Long iterationId, Long workItemId) {
+        checkAssignable(iterationId, workItemId);
+    }
+
+    private WorkItem checkAssignable(Long iterationId, Long workItemId) {
         Iteration it = mapper.selectById(iterationId);
         if (it == null) {
             throw new BusinessException(4040, "迭代不存在");
@@ -113,6 +118,13 @@ public class IterationService {
             throw new GuardException("GUARD_READY_UNMET",
                     "进入 Sprint 承诺前需满足 Ready 条件（验收条件、责任人、估算）");
         }
+        return wi;
+    }
+
+    public void assign(Long iterationId, Long workItemId) {
+        WorkItem wi = checkAssignable(iterationId, workItemId);
+        Iteration it = mapper.selectById(iterationId); // 预检已保证存在
+
         wi.setIterationId(iterationId);
         wi.setUpdatedBy(UserContext.currentUserId());
         wi.setUpdatedAt(LocalDateTime.now());

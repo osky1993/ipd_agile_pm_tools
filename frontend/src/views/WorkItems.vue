@@ -115,10 +115,26 @@ const batchResultVisible = ref(false)
 
 async function openBatch(kind: 'transition' | 'owner' | 'priority' | 'iteration') {
   batchForm.value = { toStatus: '', reason: '', ownerId: undefined, priority: 'P2', iterationId: undefined }
+  preflightResult.value = null
   if (kind === 'iteration' && projectId.value) {
     iterations.value = (await iterationApi.list(projectId.value)).filter((i) => i.hidden !== 1 && i.status !== 'CLOSED')
   }
   batchDialog.value = kind
+}
+
+// 预检结果（dry-run：状态机/守卫全跑但不落库）
+const preflightResult = ref<BatchItemResult[] | null>(null)
+
+async function runPreflight() {
+  const ids = selection.value.map((w) => w.id)
+  const kind = batchDialog.value
+  if (kind === 'transition') {
+    if (!batchForm.value.toStatus) return ElMessage.warning('请选择目标状态')
+    preflightResult.value = await batchApi.execute({ ids, action: 'TRANSITION', toStatus: batchForm.value.toStatus, reason: batchForm.value.reason || undefined, dryRun: true })
+  } else if (kind === 'iteration') {
+    if (!batchForm.value.iterationId) return ElMessage.warning('请选择迭代')
+    preflightResult.value = await batchApi.execute({ ids, action: 'ASSIGN_ITERATION', iterationId: batchForm.value.iterationId, dryRun: true })
+  }
 }
 
 async function submitBatch() {
@@ -230,8 +246,17 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
       <p class="hint">逐条走状态机与守卫，不满足条件的项会失败并逐条列出。</p>
+      <div v-if="preflightResult" class="pf-result">
+        <el-alert :closable="false" show-icon
+          :type="preflightResult.every(r => r.ok) ? 'success' : 'warning'"
+          :title="`预检：${preflightResult.filter(r => r.ok).length} 条可通过，${preflightResult.filter(r => !r.ok).length} 条会被拦截`" />
+        <ul v-if="preflightResult.some(r => !r.ok)" class="pf-list">
+          <li v-for="(r, i) in preflightResult.filter(r => !r.ok)" :key="i"><b>{{ r.code }}</b>：{{ r.message }}</li>
+        </ul>
+      </div>
       <template #footer>
         <el-button @click="batchDialog = ''">取消</el-button>
+        <el-button @click="runPreflight">预检</el-button>
         <el-button type="primary" @click="submitBatch">执行（{{ selection.length }} 条）</el-button>
       </template>
     </el-dialog>
@@ -266,8 +291,17 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
       <p class="hint">进迭代逐条走 Ready 守卫（验收条件/责任人/估算齐备才放行）。</p>
+      <div v-if="preflightResult" class="pf-result">
+        <el-alert :closable="false" show-icon
+          :type="preflightResult.every(r => r.ok) ? 'success' : 'warning'"
+          :title="`预检：${preflightResult.filter(r => r.ok).length} 条可通过，${preflightResult.filter(r => !r.ok).length} 条会被拦截`" />
+        <ul v-if="preflightResult.some(r => !r.ok)" class="pf-list">
+          <li v-for="(r, i) in preflightResult.filter(r => !r.ok)" :key="i"><b>{{ r.code }}</b>：{{ r.message }}</li>
+        </ul>
+      </div>
       <template #footer>
         <el-button @click="batchDialog = ''">取消</el-button>
+        <el-button @click="runPreflight">预检</el-button>
         <el-button type="primary" @click="submitBatch">执行（{{ selection.length }} 条）</el-button>
       </template>
     </el-dialog>
@@ -315,4 +349,6 @@ onMounted(async () => {
 .imp-errors { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 .batch-bar { display: flex; align-items: center; gap: 10px; background: #ecf5ff; border: 1px solid #d9ecff; border-radius: 6px; padding: 8px 14px; margin-bottom: 10px; }
 .batch-count { font-size: 13px; color: #409eff; font-weight: 600; }
+.pf-result { margin-top: 10px; }
+.pf-list { color: #e6a23c; font-size: 12px; margin: 8px 0 0; padding-left: 18px; }
 </style>

@@ -301,12 +301,21 @@ public class WorkItemService {
     }
 
     /**
-     * 状态流转：状态机校验 → 守卫校验 → 更新 → 写状态时间线 → 审计。
-     * 进入 Accepted 时自动补齐验收人与时间。
+     * 流转预检（不落库）：状态机 + 回退理由 + 守卫全部校验一遍，任一不通过即抛出。
+     * 供批量操作 dry-run 预演"哪些会被拦、为什么"。守卫均为只读校验，可安全重复执行。
      */
-    @Transactional
-    public WorkItem transition(Long id, String toStatus, String reason) {
+    public void preflight(Long id, String toStatus, String reason) {
         WorkItem item = get(id);
+        // 与真实流转同口径：进入 Accepted 前引擎会补齐验收人/时间（此处仅内存，不落库）
+        if ("Accepted".equals(toStatus)) {
+            item.setAcceptedBy(UserContext.currentUserId());
+            item.setAcceptedAt(LocalDateTime.now());
+        }
+        validateTransition(item, toStatus, reason);
+    }
+
+    /** 状态机校验 → 回退理由 → 守卫链（只校验不写库；transition 与 preflight 共用）。 */
+    private void validateTransition(WorkItem item, String toStatus, String reason) {
         WorkItemType type = WorkItemType.of(item.getType());
         String from = item.getStatus();
 
@@ -322,19 +331,29 @@ public class WorkItemService {
             throw new BusinessException("状态回退必须填写理由");
         }
 
-        Long uid = UserContext.currentUserId();
-        // 进入 Accepted：先补齐验收人/时间，再过守卫
-        if ("Accepted".equals(toStatus)) {
-            item.setAcceptedBy(uid);
-            item.setAcceptedAt(LocalDateTime.now());
-        }
-
         TransitionContext ctx = new TransitionContext().setReason(reason);
         for (TransitionGuard guard : guards) {
             if (guard.supports(item, toStatus)) {
                 guard.check(item, toStatus, ctx);
             }
         }
+    }
+
+    /**
+     * 状态流转：状态机校验 → 守卫校验 → 更新 → 写状态时间线 → 审计。
+     * 进入 Accepted 时自动补齐验收人与时间。
+     */
+    @Transactional
+    public WorkItem transition(Long id, String toStatus, String reason) {
+        WorkItem item = get(id);
+        String from = item.getStatus();
+        Long uid = UserContext.currentUserId();
+        // 进入 Accepted：先补齐验收人/时间，再过守卫（守卫可能校验验收人）
+        if ("Accepted".equals(toStatus)) {
+            item.setAcceptedBy(uid);
+            item.setAcceptedAt(LocalDateTime.now());
+        }
+        validateTransition(item, toStatus, reason);
 
         item.setStatus(toStatus);
         item.setUpdatedBy(uid);
