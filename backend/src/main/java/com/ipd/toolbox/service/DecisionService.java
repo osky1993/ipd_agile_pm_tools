@@ -38,6 +38,16 @@ public class DecisionService {
                 .eq("project_id", projectId).orderByDesc("decided_at"));
     }
 
+    /** 该 subject 的最新决策（修订链的 prev 候选），无则 null。 */
+    public Decision latestFor(String subjectType, Long subjectId) {
+        if (subjectType == null || subjectId == null) {
+            return null;
+        }
+        return mapper.selectOne(new QueryWrapper<Decision>()
+                .eq("subject_type", subjectType).eq("subject_id", subjectId)
+                .orderByDesc("id").last("LIMIT 1"));
+    }
+
     /** 记录一条正式决策（只增）。 */
     @Transactional
     public Decision record(Decision d) {
@@ -50,6 +60,13 @@ public class DecisionService {
             throw new BusinessException("决策结论不能为空");
         }
         d.setId(null);
+        // 修订链：同 subject 已有决策则自动串到最新一条（调用方显式给 prev 时尊重之）
+        if (d.getPrevDecisionId() == null) {
+            Decision latest = latestFor(d.getSubjectType(), d.getSubjectId());
+            if (latest != null) {
+                d.setPrevDecisionId(latest.getId());
+            }
+        }
         d.setCode(codeGenerator.next(project.getId(), project.getCode(), "DEC"));
         d.setDecidedBy(UserContext.currentUserId());
         d.setDecidedAt(LocalDateTime.now());

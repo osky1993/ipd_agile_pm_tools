@@ -34,10 +34,28 @@ const CRITERION_STATUS_ZH: Record<string, string> = {
 }
 const cStatus = (s: string) => CRITERION_STATUS_ZH[s] ?? s
 
-/** 本 gate 的决策链（沿 prevDecisionId 从最新回溯） */
+/** 本 gate 的决策链：真沿 prevDecisionId 回溯（链头=未被任何 prev 引用的最新者；孤儿降序兜底） */
 const decisionChain = computed<Decision[]>(() => {
   const mine = decisions.value.filter((d) => d.subjectType === 'STAGE_GATE' && d.subjectId === gateId)
-  return [...mine].sort((a, b) => b.id - a.id)
+  if (!mine.length) return []
+  const byId = new Map(mine.map((d) => [d.id, d]))
+  const referenced = new Set(mine.map((d) => d.prevDecisionId).filter((x): x is number => x != null))
+  const heads = mine.filter((d) => !referenced.has(d.id)).sort((a, b) => b.id - a.id)
+  const chain: Decision[] = []
+  const seen = new Set<number>()
+  for (const head of heads) {
+    let cur: Decision | undefined = head
+    while (cur && !seen.has(cur.id)) {
+      chain.push(cur)
+      seen.add(cur.id)
+      cur = cur.prevDecisionId != null ? byId.get(cur.prevDecisionId) : undefined
+    }
+  }
+  // 孤儿（数据缺口）兜底追加
+  for (const d of [...mine].sort((a, b) => b.id - a.id)) {
+    if (!seen.has(d.id)) chain.push(d)
+  }
+  return chain
 })
 const latestDecision = computed(() => decisionChain.value[0] ?? null)
 
