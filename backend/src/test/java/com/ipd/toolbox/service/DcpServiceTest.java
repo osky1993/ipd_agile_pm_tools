@@ -36,6 +36,7 @@ class DcpServiceTest {
     private TraceLinkMapper traceLinkMapper;
     private DecisionService decisionService;
     private ReadinessService readinessService;
+    private BaselineService baselineService;
     private DcpService service;
 
     private static final long GATE_ID = 7L;
@@ -47,8 +48,9 @@ class DcpServiceTest {
         traceLinkMapper = mock(TraceLinkMapper.class);
         decisionService = mock(DecisionService.class);
         readinessService = mock(ReadinessService.class);
+        baselineService = mock(BaselineService.class);
         service = new DcpService(criterionMapper, stageGateMapper, traceLinkMapper,
-                decisionService, readinessService, new ObjectMapper());
+                decisionService, readinessService, new ObjectMapper(), baselineService);
 
         StageGate gate = new StageGate();
         gate.setId(GATE_ID);
@@ -124,8 +126,13 @@ class DcpServiceTest {
     }
 
     @Test
-    void 有条件通过必须绑定风险与期限() {
+    void 有条件通过必须绑定风险与期限_且自动固化基线() {
         when(criterionMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(decisionService.record(any())).thenAnswer(inv -> {
+            Decision d = inv.getArgument(0);
+            d.setId(99L);
+            return d;
+        });
 
         assertThrows(BusinessException.class,
                 () -> service.review(GATE_ID, "CONDITIONAL", "遗留问题", null, LocalDate.now()));
@@ -133,11 +140,13 @@ class DcpServiceTest {
                 () -> service.review(GATE_ID, "CONDITIONAL", "遗留问题", 6L, null));
 
         Decision ok = service.review(GATE_ID, "CONDITIONAL", "遗留问题", 6L, LocalDate.of(2026, 9, 30));
-        assertNull(ok); // record 为 mock，返回 null 即可——重点是绑定校验通过后走到落库
+        assertEquals(99L, ok.getId());
         ArgumentCaptor<Decision> captor = ArgumentCaptor.forClass(Decision.class);
         verify(decisionService).record(captor.capture());
         assertEquals(6L, captor.getValue().getLinkedRiskId());
         assertEquals(LocalDate.of(2026, 9, 30), captor.getValue().getCommitmentDue());
+        // 通过类结论 → 自动固化范围基线（关联本次决策）
+        verify(baselineService).create(eq(1L), any(), eq("DCP"), eq(GATE_ID), eq(99L));
     }
 
     @Test

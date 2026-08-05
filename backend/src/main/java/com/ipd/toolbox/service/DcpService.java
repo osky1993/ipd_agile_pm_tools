@@ -32,15 +32,19 @@ public class DcpService {
     private final ReadinessService readinessService;
     private final ObjectMapper objectMapper;
 
+    private final BaselineService baselineService;
+
     public DcpService(GateCriterionMapper criterionMapper, StageGateMapper stageGateMapper,
                       TraceLinkMapper traceLinkMapper, DecisionService decisionService,
-                      ReadinessService readinessService, ObjectMapper objectMapper) {
+                      ReadinessService readinessService, ObjectMapper objectMapper,
+                      BaselineService baselineService) {
         this.criterionMapper = criterionMapper;
         this.stageGateMapper = stageGateMapper;
         this.traceLinkMapper = traceLinkMapper;
         this.decisionService = decisionService;
         this.readinessService = readinessService;
         this.objectMapper = objectMapper;
+        this.baselineService = baselineService;
     }
 
     public record CriterionView(Long id, String code, String domain, String criterion, Long ownerId,
@@ -152,7 +156,14 @@ public class DcpService {
         d.setLinkedRiskId(linkedRiskId);
         d.setCommitmentDue(commitmentDue);
         d.setSnapshot(toJson(snap));
-        return decisionService.record(d);
+        Decision saved = decisionService.record(d);
+
+        // 通过类结论 = 承诺时刻：自动固化范围基线（同 gate 重复评审生成新基线，即修订语义）
+        if ("PASS".equals(conclusion) || "CONDITIONAL".equals(conclusion)) {
+            baselineService.create(gate.getProjectId(), "B-" + gate.getCode(), "DCP",
+                    stageGateId, saved.getId());
+        }
+        return saved;
     }
 
     private long evidenceCount(Long criterionId) {
