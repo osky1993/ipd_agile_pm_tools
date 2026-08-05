@@ -10,10 +10,29 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.*;
 
-/** 前端下拉/表单所需的元数据：工作项类型、追溯关系、各类型状态集合。 */
+/** 前端下拉/表单所需的元数据：工作项类型、追溯关系、各类型状态集合、用户清单。 */
 @RestController
 @RequestMapping("/api/meta")
 public class MetaController {
+
+    private final com.ipd.toolbox.mapper.SysUserMapper userMapper;
+
+    public MetaController(com.ipd.toolbox.mapper.SysUserMapper userMapper) {
+        this.userMapper = userMapper;
+    }
+
+    /** 启用中的用户清单（责任人下拉/显示名映射用）。 */
+    @GetMapping("/users")
+    public Result<List<Map<String, Object>>> users() {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (com.ipd.toolbox.domain.entity.SysUser u : userMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.ipd.toolbox.domain.entity.SysUser>()
+                        .eq("enabled", 1).orderByAsc("id"))) {
+            list.add(Map.of("id", u.getId(), "username", u.getUsername(),
+                    "displayName", u.getDisplayName() == null ? u.getUsername() : u.getDisplayName()));
+        }
+        return Result.ok(list);
+    }
 
     @GetMapping("/work-item-types")
     public Result<List<Map<String, String>>> workItemTypes() {

@@ -6,12 +6,15 @@ import { iterationApi, type Iteration } from '@/api/agile'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import { statusLabel, typeLabel } from '@/utils/labels'
 import ProjectChips from '@/components/ProjectChips.vue'
+import UserSelect from '@/components/UserSelect.vue'
+import { useUserStore } from '@/stores/users'
 
 const projectId = ref<number | null>(null)
 const types = ref<{ value: string; abbr: string; label: string }[]>([])
 const typeFilter = ref<string>('')
 const list = ref<WorkItem[]>([])
 const loading = ref(false)
+const users = useUserStore()
 
 const drawerVisible = ref(false)
 const currentId = ref<number | null>(null)
@@ -148,6 +151,7 @@ async function submitBatch() {
 watch([projectId, typeFilter], loadList)
 
 onMounted(async () => {
+  users.load()
   types.value = await metaApi.workItemTypes()
 })
 </script>
@@ -206,7 +210,9 @@ onMounted(async () => {
         <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status, row.type) }}</el-tag></template>
       </el-table-column>
       <el-table-column prop="priority" label="优先级" width="80" />
-      <el-table-column prop="ownerId" label="责任人" width="80" />
+      <el-table-column label="责任人" width="100">
+        <template #default="{ row }">{{ users.label(row.ownerId) }}</template>
+      </el-table-column>
     </el-table>
 
     <WorkItemDrawer v-model="drawerVisible" :item-id="currentId" @changed="loadList" />
@@ -231,7 +237,7 @@ onMounted(async () => {
     </el-dialog>
     <el-dialog :model-value="batchDialog === 'owner'" title="批量改责任人" width="380px" @close="batchDialog = ''">
       <el-form label-width="88px">
-        <el-form-item label="责任人ID"><el-input v-model.number="batchForm.ownerId" placeholder="用户ID" /></el-form-item>
+        <el-form-item label="责任人"><UserSelect v-model="batchForm.ownerId" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="batchDialog = ''">取消</el-button>

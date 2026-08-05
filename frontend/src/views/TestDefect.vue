@@ -7,9 +7,12 @@ import { changeApi, type ImpactItem } from '@/api/governance'
 import { workItemApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { useUserStore } from '@/stores/users'
 import { statusLabel, testResultLabel, caseStatusLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
+const users = useUserStore()
+users.load()
 const activeTab = ref('cases')
 const cases = ref<TestCase[]>([])
 const defects = ref<WorkItem[]>([])
@@ -318,7 +321,9 @@ function openDefect(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
           <el-table-column label="状态" width="120">
             <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
-          <el-table-column prop="ownerId" label="责任人" width="80" />
+          <el-table-column label="责任人" width="100">
+            <template #default="{ row }">{{ users.label(row.ownerId) }}</template>
+          </el-table-column>
         </el-table>
         <p class="hint">点击缺陷行打开详情：可流转 Open→Analysing→Fixing→Retesting→Closed。关闭前需有复测通过（守卫#2）。</p>
       </el-tab-pane>

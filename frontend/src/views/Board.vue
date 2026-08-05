@@ -5,6 +5,7 @@ import { iterationApi, type Iteration } from '@/api/agile'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import { useUserStore } from '@/stores/users'
 import { statusLabel, sprintStatusLabel } from '@/utils/labels'
 
 const COLUMNS = ['Backlog', 'Ready', 'In Progress', 'Verification', 'Accepted']
@@ -13,6 +14,8 @@ const TYPE_LABEL: Record<string, string> = { CAPABILITY: '能力', REQUIREMENT: 
 const TYPE_COLOR: Record<string, string> = { CAPABILITY: '', REQUIREMENT: 'success', STORY: 'warning', TASK: 'info' }
 
 const projectId = ref<number | null>(null)
+const users = useUserStore()
+users.load()
 const sprints = ref<Iteration[]>([])
 const sprintId = ref<number | null>(null)
 const sprintItems = ref<WorkItem[]>([])
@@ -208,7 +211,7 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
             <div class="card-title" @click="openDetail(w)">{{ w.title }}</div>
             <div class="card-foot">
               <span v-if="w.priority" class="prio">{{ w.priority }}</span>
-              <span v-if="w.ownerId" class="owner">#{{ w.ownerId }}</span>
+              <span v-if="w.ownerId" class="owner">{{ users.label(w.ownerId) }}</span>
             </div>
           </el-card>
         </div>

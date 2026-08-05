@@ -7,9 +7,13 @@ import { workItemApi, riskChangeExcelApi, type WorkItem } from '@/api/workitem'
 import { statusLabel, decisionLabel, decisionTypeLabel, testResultLabel } from '@/utils/labels'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
+import UserSelect from '@/components/UserSelect.vue'
+import { useUserStore } from '@/stores/users'
 
 const projectId = ref<number | null>(null)
 const activeTab = ref('risk')
+const users = useUserStore()
+users.load()
 const risks = ref<WorkItem[]>([])
 const evidences = ref<Evidence[]>([])
 const decisions = ref<Decision[]>([])
@@ -173,7 +177,7 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
             <template #default="{ row }">{{ riskExt(row).mitigation }}</template>
           </el-table-column>
           <el-table-column label="责任人" width="80">
-            <template #default="{ row }">{{ row.ownerId ? '#' + row.ownerId : '—' }}</template>
+            <template #default="{ row }">{{ users.label(row.ownerId) }}</template>
           </el-table-column>
           <el-table-column label="期限" width="140">
             <template #default="{ row }">
@@ -238,7 +242,7 @@ const overdueCount = computed(() => risks.value.filter(isOverdue).length)
     <el-dialog v-model="riskDialog" title="登记风险" width="460px">
       <el-form label-width="80px">
         <el-form-item label="风险描述"><el-input v-model="riskForm.title" /></el-form-item>
-        <el-form-item label="责任人ID"><el-input v-model.number="riskForm.ownerId" placeholder="用户ID" /></el-form-item>
+        <el-form-item label="责任人"><UserSelect v-model="riskForm.ownerId" /></el-form-item>
         <el-form-item label="处置措施"><el-input v-model="riskForm.mitigation" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="期限"><el-date-picker v-model="riskForm.dueDate" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
       </el-form>

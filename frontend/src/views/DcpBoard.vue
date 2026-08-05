@@ -7,6 +7,8 @@ import { evidenceApi, decisionApi, type Decision } from '@/api/governance'
 import { readinessApi, type ReadinessSummary } from '@/api/readiness'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import ProjectChips from '@/components/ProjectChips.vue'
+import UserSelect from '@/components/UserSelect.vue'
+import { useUserStore } from '@/stores/users'
 import { decisionLabel } from '@/utils/labels'
 
 const STATUS_OPTS = [
@@ -20,6 +22,8 @@ const statusType = (s: string) => (s === 'MET' ? 'success' : s === 'PARTIAL' ? '
 const conclType = (c: string) => (c === 'PASS' ? 'success' : c === 'REJECT' ? 'danger' : 'warning')
 
 const projectId = ref<number | null>(null)
+const users = useUserStore()
+users.load()
 const gates = ref<StageGate[]>([])
 const gateId = ref<number | null>(null)
 const criteria = ref<CriterionView[]>([])
@@ -187,7 +191,7 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
               <template #default="{ row }"><el-tag v-if="row.isRedline" type="danger" size="small">红线</el-tag></template>
             </el-table-column>
             <el-table-column label="责任人" width="80">
-              <template #default="{ row }">{{ row.ownerId ? '#' + row.ownerId : '—' }}</template>
+              <template #default="{ row }">{{ users.label(row.ownerId) }}</template>
             </el-table-column>
             <el-table-column label="状态" width="130">
               <template #default="{ row }">
@@ -209,7 +213,7 @@ function viewSnapshot(d: Decision & { snapshot?: string }) {
             </el-select>
           </el-form-item>
           <el-form-item label="检查项"><el-input v-model="itemForm.criterion" type="textarea" :rows="2" /></el-form-item>
-          <el-form-item label="责任人ID"><el-input v-model.number="itemForm.ownerId" placeholder="用户ID" /></el-form-item>
+          <el-form-item label="责任人"><UserSelect v-model="itemForm.ownerId" /></el-form-item>
           <el-form-item label="状态">
             <el-select v-model="itemForm.status" style="width:100%">
               <el-option v-for="o in STATUS_OPTS" :key="o.value" :label="o.label" :value="o.value" />

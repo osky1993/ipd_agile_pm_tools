@@ -10,6 +10,7 @@ import { evidenceApi, type Evidence } from '@/api/governance'
 import { statusLabel, typeLabel, relationLabel } from '@/utils/labels'
 import MarkdownView from '@/components/MarkdownView.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import UserSelect from '@/components/UserSelect.vue'
 
 const props = defineProps<{ modelValue: boolean; itemId: number | null }>()
 const emit = defineEmits<{
@@ -228,7 +229,7 @@ const statusType = (s: string) => {
                 </template>
               </el-form-item>
               <el-row :gutter="12">
-                <el-col :span="12"><el-form-item label="责任人ID"><el-input v-model.number="item.ownerId" placeholder="用户ID" /></el-form-item></el-col>
+                <el-col :span="12"><el-form-item label="责任人"><UserSelect v-model="item.ownerId" /></el-form-item></el-col>
                 <el-col :span="12"><el-form-item label="估算"><el-input v-model="item.estimate" placeholder="如 3" /></el-form-item></el-col>
               </el-row>
               <el-row :gutter="12">
