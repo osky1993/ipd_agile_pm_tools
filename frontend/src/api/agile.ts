@@ -41,7 +41,39 @@ export interface TestRun {
   runAt: string
 }
 
+export interface RetroItem {
+  id: number
+  code: string
+  type: string
+  title: string
+  status: string
+  estimateSnap?: string | null
+  done: boolean
+  movedOut: boolean
+}
+
+export interface VelocityPoint {
+  iterationId: number
+  code: string
+  name: string
+  endDate: string
+  committed: number
+  done: number
+}
+
+export interface Retro {
+  iteration: Iteration
+  items: RetroItem[]
+  committedCount: number
+  doneCount: number
+  spilloverCount: number
+  movedOutCount: number
+  completionRate: number
+  velocity: VelocityPoint[]
+}
+
 export const iterationApi = {
+  retro: (id: number) => http.get<any, Retro>(`/iterations/${id}/retro`),
   list: (projectId: number) => http.get<any, Iteration[]>('/iterations', { params: { projectId } }),
   create: (data: Partial<Iteration>) => http.post<any, Iteration>('/iterations', data),
   update: (id: number, data: Partial<Iteration>) => http.put<any, Iteration>(`/iterations/${id}`, data),

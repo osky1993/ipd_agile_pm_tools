@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class IterationService {
@@ -100,6 +102,68 @@ public class IterationService {
      * 将工作项拉入迭代承诺。守卫#1 Ready：未满足验收条件/责任人/估算的工作项不能进入 Sprint 承诺（T303）。
      */
     @Transactional
+    // ---------- 迭代复盘 ----------
+
+    public record RetroItem(Long id, String code, String type, String title, String status,
+                            String estimateSnap, boolean done, boolean movedOut) {
+    }
+
+    public record VelocityPoint(Long iterationId, String code, String name,
+                                java.time.LocalDate endDate, long committed, long done) {
+    }
+
+    public record Retro(Iteration iteration, List<RetroItem> items,
+                        long committedCount, long doneCount, long spilloverCount, long movedOutCount,
+                        int completionRate, List<VelocityPoint> velocity) {
+    }
+
+    private static final Set<String> DONE_STATUSES = Set.of("Accepted", "Closed", "Verified");
+
+    /**
+     * 迭代复盘：以承诺快照（只增不删）为分母——承诺了什么 vs 完成了什么，
+     * 溢出与移出如实呈现；速度趋势取同项目全部迭代的承诺/完成对比。
+     */
+    public Retro retro(Long iterationId) {
+        Iteration it = mapper.selectById(iterationId);
+        if (it == null) {
+            throw new BusinessException(4040, "迭代不存在");
+        }
+        List<RetroItem> items = retroItems(iterationId);
+        long done = items.stream().filter(RetroItem::done).count();
+        long movedOut = items.stream().filter(r -> r.movedOut() && !r.done()).count();
+        long spillover = items.size() - done - movedOut;
+        int rate = items.isEmpty() ? 0 : (int) Math.round(done * 100.0 / items.size());
+
+        List<VelocityPoint> velocity = new ArrayList<>();
+        for (Iteration past : mapper.selectList(new QueryWrapper<Iteration>()
+                .eq("project_id", it.getProjectId()).isNotNull("end_date").orderByAsc("end_date"))) {
+            List<RetroItem> pastItems = retroItems(past.getId());
+            if (pastItems.isEmpty() && !past.getId().equals(iterationId)) {
+                continue; // 无承诺的迭代不进趋势
+            }
+            velocity.add(new VelocityPoint(past.getId(), past.getCode(), past.getName(), past.getEndDate(),
+                    pastItems.size(), pastItems.stream().filter(RetroItem::done).count()));
+        }
+        return new Retro(it, items, items.size(), done, spillover, movedOut, rate, velocity);
+    }
+
+    private List<RetroItem> retroItems(Long iterationId) {
+        List<RetroItem> out = new ArrayList<>();
+        for (com.ipd.toolbox.domain.entity.IterationCommitment c : commitmentMapper.selectList(
+                new QueryWrapper<com.ipd.toolbox.domain.entity.IterationCommitment>()
+                        .eq("iteration_id", iterationId).orderByAsc("id"))) {
+            WorkItem w = workItemMapper.selectById(c.getWorkItemId());
+            if (w == null) {
+                continue;
+            }
+            boolean done = DONE_STATUSES.contains(w.getStatus());
+            boolean movedOut = !iterationId.equals(w.getIterationId());
+            out.add(new RetroItem(w.getId(), w.getCode(), w.getType(), w.getTitle(), w.getStatus(),
+                    c.getEstimateSnap(), done, movedOut));
+        }
+        return out;
+    }
+
     /** 进迭代预检（不落库）：迭代/工作项存在性 + Ready 守卫，批量 dry-run 用。 */
     public void preflightAssign(Long iterationId, Long workItemId) {
         checkAssignable(iterationId, workItemId);

@@ -23,6 +23,12 @@ public class IterationController {
         return Result.ok(service.list(projectId));
     }
 
+    /** 迭代复盘：承诺 vs 完成、溢出/移出、速度趋势。 */
+    @GetMapping("/{id}/retro")
+    public Result<IterationService.Retro> retro(@PathVariable Long id) {
+        return Result.ok(service.retro(id));
+    }
+
     @PostMapping
     public Result<Iteration> create(@RequestBody Iteration it) {
         return Result.ok(service.create(it));

@@ -175,6 +175,9 @@ function openDetail(w: WorkItem) { currentId.value = w.id; drawerVisible.value =
       <ProjectChips v-model="projectId" class="chips-flex" @change="loadSprints" />
       <div class="toolbar-right">
         <el-checkbox v-if="hiddenCount" v-model="showHidden">显示已隐藏（{{ hiddenCount }}）</el-checkbox>
+        <a v-if="sprintId" :href="`/report/retro/${sprintId}`" target="_blank">
+          <el-button><el-icon><DataAnalysis /></el-icon>迭代复盘</el-button>
+        </a>
         <el-button @click="openWipDialog"><el-icon><Odometer /></el-icon>WIP 限制</el-button>
         <el-button type="primary" @click="createSprint = true"><el-icon><Plus /></el-icon>新建迭代</el-button>
       </div>
