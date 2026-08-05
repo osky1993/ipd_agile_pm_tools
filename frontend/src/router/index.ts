@@ -21,6 +21,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'dashboard', name: 'dashboard', component: () => import('@/views/Dashboard.vue'), meta: { title: '项目驾驶舱', icon: 'DataLine' } },
       { path: 'projects', name: 'projects', component: () => import('@/views/Projects.vue'), meta: { title: '项目·版本·阶段', icon: 'Folder' } },
       { path: 'roadmap', name: 'roadmap', component: () => import('@/views/Roadmap.vue'), meta: { title: '路标图', icon: 'Calendar' } },
+      { path: 'baseline', name: 'baseline', component: () => import('@/views/BaselineBoard.vue'), meta: { title: '基线管理', icon: 'Collection' } },
       { path: 'dcp', name: 'dcp', component: () => import('@/views/DcpBoard.vue'), meta: { title: 'DCP准入条件', icon: 'CircleCheck' } },
       { path: 'requirements', name: 'requirements', component: () => import('@/views/RequirementTree.vue'), meta: { title: '能力与需求树', icon: 'Share' } },
       { path: 'board', name: 'board', component: () => import('@/views/Board.vue'), meta: { title: 'Sprint看板', icon: 'Grid' } },

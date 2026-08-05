@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import http from '@/api/http'
 import { dcpApi, type Overview } from '@/api/dcp'
+import { baselineApi, type Diff } from '@/api/baseline'
 import { stageApi, type StageGate } from '@/api/catalog'
 import { readinessApi, type ReadinessSummary } from '@/api/readiness'
 import { decisionApi, type Decision } from '@/api/governance'
@@ -22,6 +23,7 @@ const loading = ref(true)
 const project = ref<Project | null>(null)
 const gate = ref<StageGate | null>(null)
 const overview = ref<Overview | null>(null)
+const baselineDiff = ref<Diff | null>(null)
 const readiness = ref<ReadinessSummary | null>(null)
 const decisions = ref<Decision[]>([])
 
@@ -81,6 +83,11 @@ async function load() {
     readiness.value = rs
     decisions.value = ds
     project.value = p
+    // 范围对比：取项目最新基线的 diff（无基线则该章节提示未建）
+    try {
+      const bls = await baselineApi.list(projectId)
+      if (bls.length) baselineDiff.value = await baselineApi.diff(bls[0].id)
+    } catch { /* 基线读取失败不阻塞报告 */ }
   } finally {
     loading.value = false
   }
@@ -168,7 +175,31 @@ onMounted(load)
         </table>
       </ReportSection>
 
-      <ReportSection title="五、决策记录链（只增不改）" page-break>
+      <ReportSection title="五、范围对比（相对最新基线）">
+        <template v-if="baselineDiff">
+          <p class="bl-line">
+            对比基线 <b>{{ baselineDiff.baseline.name }}</b>（{{ baselineDiff.baseline.createdAt.slice(0, 10) }} 固化，{{ baselineDiff.summary.baselineCount }} 项）：
+            基线外新增 <b :class="{ warn: baselineDiff.summary.added }">{{ baselineDiff.summary.added }}</b> 项（蔓延率 {{ baselineDiff.summary.creepRate }}%）、
+            移除 {{ baselineDiff.summary.removed }} 项、已完成 {{ baselineDiff.summary.done }} 项、
+            平均日期偏差 {{ baselineDiff.summary.avgSlipDays ?? '—' }} 天、估算漂移 {{ baselineDiff.summary.estimateDeltaTotal > 0 ? '+' : '' }}{{ baselineDiff.summary.estimateDeltaTotal }}
+          </p>
+          <table class="rp-table" v-if="baselineDiff.rows.some(r => r.kind === 'ADDED' || (r.slipDays ?? 0) > 0)">
+            <thead><tr><th style="width:130px">编号</th><th>标题</th><th style="width:110px">对比结论</th><th style="width:100px">日期偏差</th></tr></thead>
+            <tbody>
+              <tr v-for="r in baselineDiff.rows.filter(r => r.kind === 'ADDED' || (r.slipDays ?? 0) > 0)" :key="r.workItemId">
+                <td class="mono">{{ r.code }}</td>
+                <td>{{ r.title }}</td>
+                <td>{{ r.kind === 'ADDED' ? '基线外新增' : '日期拖期' }}</td>
+                <td>{{ r.slipDays != null ? `+${r.slipDays} 天` : '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="rp-empty">范围与日期均在基线承诺内。</p>
+        </template>
+        <p v-else class="rp-empty">尚未建立基线（DCP 评审通过时自动固化，或在「基线管理」页手动建立）。</p>
+      </ReportSection>
+
+      <ReportSection title="六、决策记录链（只增不改）" page-break>
         <table class="rp-table" v-if="decisionChain.length">
           <thead><tr><th style="width:110px">编号</th><th style="width:110px">结论</th><th>理由</th><th style="width:120px">遗留承诺</th><th style="width:150px">时间</th></tr></thead>
           <tbody>
@@ -219,6 +250,8 @@ onMounted(load)
 .mono { font-family: monospace; }
 .rev { color: #e6a23c; font-size: 12px; }
 .rp-warn { color: #e6a23c; font-size: 13px; }
+.bl-line { font-size: 13px; color: #606266; line-height: 1.8; }
+.bl-line .warn { color: #f56c6c; }
 .rp-empty { color: #909399; font-size: 13px; }
 .rp-foot { margin-top: 26px; text-align: center; color: #c0c4cc; font-size: 12px; }
 </style>
