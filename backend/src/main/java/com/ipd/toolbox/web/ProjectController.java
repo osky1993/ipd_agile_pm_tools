@@ -13,11 +13,20 @@ public class ProjectController {
 
     private final ProjectService service;
     private final com.ipd.toolbox.service.WeeklyReportService weeklyReportService;
+    private final com.ipd.toolbox.service.ClosureService closureService;
 
     public ProjectController(ProjectService service,
-                             com.ipd.toolbox.service.WeeklyReportService weeklyReportService) {
+                             com.ipd.toolbox.service.WeeklyReportService weeklyReportService,
+                             com.ipd.toolbox.service.ClosureService closureService) {
         this.service = service;
         this.weeklyReportService = weeklyReportService;
+        this.closureService = closureService;
+    }
+
+    /** 结项检查：未闭合风险/未评审 DCP/未关缺陷/在途变更/红线未满足（非强制拦截）。 */
+    @GetMapping("/{id}/closeout-check")
+    public Result<com.ipd.toolbox.service.ClosureService.CloseoutCheck> closeoutCheck(@PathVariable Long id) {
+        return Result.ok(closureService.check(id));
     }
 
     /** 周报数据：时间窗内的新增/流转/决策/证据（默认 7 天，上限 90）。 */

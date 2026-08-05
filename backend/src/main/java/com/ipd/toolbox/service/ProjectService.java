@@ -16,10 +16,12 @@ public class ProjectService {
 
     private final ProjectMapper mapper;
     private final AuditService audit;
+    private final ClosureService closureService;
 
-    public ProjectService(ProjectMapper mapper, AuditService audit) {
+    public ProjectService(ProjectMapper mapper, AuditService audit, ClosureService closureService) {
         this.mapper = mapper;
         this.audit = audit;
+        this.closureService = closureService;
     }
 
     public List<Project> list() {
@@ -80,7 +82,17 @@ public class ProjectService {
         old.setUpdatedBy(UserContext.currentUserId());
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);
-        audit.record(id, "PROJECT", id, "UPDATE", "更新项目 " + old.getCode(), snapshot, old);
+        // 结项留痕：流转 CLOSED 时把未了事项计数写入审计（不拦截，决定权在人）
+        String summary = "更新项目 " + old.getCode();
+        if ("CLOSED".equals(patch.getLifecycleStatus())
+                && !"CLOSED".equals(snapshot.getLifecycleStatus())) {
+            ClosureService.CloseoutCheck c = closureService.check(id);
+            summary = "结项 " + old.getCode() + (c.clean() ? "（各项已清零）"
+                    : String.format("（未闭合风险 %d、未评审 DCP %d、未关缺陷 %d、在途变更 %d、红线未满足 %d）",
+                            c.openRisks(), c.unreviewedGates(), c.openDefects(),
+                            c.pendingChanges(), c.unmetRedlines()));
+        }
+        audit.record(id, "PROJECT", id, "UPDATE", summary, snapshot, old);
         return old;
     }
 
