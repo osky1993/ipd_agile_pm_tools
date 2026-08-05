@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { iterationApi, type Retro } from '@/api/agile'
+import { assetsApi, LESSON_CATEGORY, type Lesson } from '@/api/assets'
 import ReportSection from '@/components/report/ReportSection.vue'
 import StaticChart from '@/components/report/StaticChart.vue'
 import { statusLabel, typeLabel } from '@/utils/labels'
@@ -69,9 +70,37 @@ function doPrint() {
   window.print()
 }
 
+// ---------- 复盘现场直接沉淀经验教训（组织资产） ----------
+const lessons = ref<Lesson[]>([])
+const lessonForm = reactive({ category: 'IMPROVE' as string, title: '', detail: '' })
+
+async function loadLessons() {
+  if (!data.value) return
+  const all = await assetsApi.lessons({ projectId: data.value.iteration.projectId })
+  lessons.value = all.filter((l) => l.sourceType === 'ITERATION' && l.sourceId === iterationId)
+}
+
+async function submitLesson() {
+  if (!data.value) return
+  if (!lessonForm.title.trim()) return ElMessage.warning('请填写标题')
+  await assetsApi.createLesson({
+    projectId: data.value.iteration.projectId,
+    category: lessonForm.category as Lesson['category'],
+    title: lessonForm.title.trim(),
+    detail: lessonForm.detail || undefined,
+    sourceType: 'ITERATION',
+    sourceId: iterationId,
+  })
+  ElMessage.success('已沉淀到组织资产')
+  lessonForm.title = ''
+  lessonForm.detail = ''
+  await loadLessons()
+}
+
 onMounted(async () => {
   try {
     data.value = await iterationApi.retro(iterationId)
+    await loadLessons()
   } finally {
     loading.value = false
   }
@@ -132,9 +161,27 @@ onMounted(async () => {
         <p v-else class="rp-empty">暂无历史迭代数据。</p>
       </ReportSection>
 
-      <ReportSection title="四、讨论与行动（打印后现场填写）">
-        <div class="blank-box">做得好的：</div>
-        <div class="blank-box">待改进的：</div>
+      <ReportSection title="四、经验教训（沉淀到组织资产）">
+        <!-- 录入区不打印 -->
+        <div class="no-print lesson-form">
+          <el-radio-group v-model="lessonForm.category" size="small">
+            <el-radio-button v-for="(l, k) in LESSON_CATEGORY" :key="k" :value="k">{{ l }}</el-radio-button>
+          </el-radio-group>
+          <el-input v-model="lessonForm.title" placeholder="一句话结论（如：估算前先对齐验收口径）" style="margin:8px 0" @keyup.enter="submitLesson" />
+          <el-input v-model="lessonForm.detail" type="textarea" :rows="2" placeholder="背景、根因、下次怎么做（可选）" />
+          <el-button type="primary" size="small" style="margin-top:8px" @click="submitLesson">沉淀这条经验</el-button>
+        </div>
+        <table class="rp-table" v-if="lessons.length">
+          <thead><tr><th style="width:90px">类别</th><th style="width:220px">结论</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr v-for="l in lessons" :key="l.id">
+              <td>{{ LESSON_CATEGORY[l.category] ?? l.category }}</td>
+              <td>{{ l.title }}</td>
+              <td>{{ l.detail }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="blank-box">（尚未沉淀经验——上方录入，或打印后现场手填）</div>
         <div class="blank-box">下迭代行动：</div>
       </ReportSection>
 
@@ -162,5 +209,6 @@ onMounted(async () => {
 .mono { font-family: monospace; }
 .rp-empty { color: #909399; font-size: 13px; }
 .blank-box { border: 1px dashed #dcdfe6; border-radius: 6px; min-height: 56px; padding: 8px 12px; margin-bottom: 10px; color: #909399; font-size: 13px; }
+.lesson-form { border: 1px solid #ebeef5; border-radius: 8px; padding: 12px; margin-bottom: 12px; background: #fafbfc; }
 .rp-foot { margin-top: 26px; text-align: center; color: #c0c4cc; font-size: 12px; }
 </style>
