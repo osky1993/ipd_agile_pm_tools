@@ -41,7 +41,41 @@ export interface AsOf {
   dayEvents: DayEvent[]
 }
 
+export interface CompareRow {
+  id: number
+  code: string
+  type: string
+  title: string
+  statusFrom?: string | null
+  statusTo: string
+  kind: 'NEW' | 'COMPLETED' | 'CHANGED' | 'UNCHANGED'
+}
+
+export interface Kpis {
+  reqTotal: number
+  reqAccepted: number
+  defectsOpen: number
+  wip: number
+  risksOpen: number
+}
+
+export interface Compare {
+  from: string
+  to: string
+  kpisFrom: Kpis
+  kpisTo: Kpis
+  added: number
+  completed: number
+  changed: number
+  unchanged: number
+  transitionCount: number
+  rows: CompareRow[]
+  periodEvents: DayEvent[]
+}
+
 export const timeMachineApi = {
+  compare: (projectId: number, from: string, to: string) =>
+    http.get<any, Compare>('/timemachine/compare', { params: { projectId, from, to } }),
   timeline: (projectId: number) =>
     http.get<any, Timeline>('/timemachine/timeline', { params: { projectId } }),
   asOf: (projectId: number, date: string) =>

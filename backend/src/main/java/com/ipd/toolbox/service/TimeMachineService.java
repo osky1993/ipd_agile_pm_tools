@@ -61,6 +61,143 @@ public class TimeMachineService {
 
     private static final Set<String> WIP_STATUSES =
             Set.of("In Progress", "Analysing", "Fixing", "Mitigating", "Retesting");
+    /** 终态集合（对比时"完成"的判定口径） */
+    private static final Set<String> DONE_STATUSES =
+            Set.of("Accepted", "Closed", "Verified", "Implemented");
+
+    // ---------- A/B 双时点对比（V2） ----------
+
+    public record CompareRow(Long id, String code, String type, String title,
+                             String statusFrom, String statusTo,
+                             String kind /* NEW | COMPLETED | CHANGED | UNCHANGED */) {
+    }
+
+    public record Kpis(int reqTotal, int reqAccepted, int defectsOpen, int wip, int risksOpen) {
+    }
+
+    public record Compare(LocalDate from, LocalDate to, Kpis kpisFrom, Kpis kpisTo,
+                          int added, int completed, int changed, int unchanged,
+                          int transitionCount, List<CompareRow> rows,
+                          List<DayEvent> periodEvents) {
+    }
+
+    /** A→B 期间发生了什么：两次回放 diff + 期间决策/基线/流转统计。 */
+    public Compare compare(Long projectId, LocalDate from, LocalDate to) {
+        requireProject(projectId);
+        if (from.isAfter(to)) {
+            LocalDate t = from;
+            from = to;
+            to = t;
+        }
+        List<WorkItem> allItems = workItemMapper.selectAllIncludingDeleted(projectId);
+        List<WorkItemStatusLog> logs = allItems.isEmpty() ? List.of()
+                : statusLogMapper.selectList(new QueryWrapper<WorkItemStatusLog>()
+                        .in("work_item_id", allItems.stream().map(WorkItem::getId).toList())
+                        .orderByAsc("id"));
+        Map<Long, String> atFrom = replay(allItems, logs, from);
+        Map<Long, String> atTo = replay(allItems, logs, to);
+
+        List<CompareRow> rows = new ArrayList<>();
+        int added = 0;
+        int completed = 0;
+        int changed = 0;
+        int unchanged = 0;
+        for (WorkItem w : allItems) {
+            String sTo = atTo.get(w.getId());
+            if (sTo == null) {
+                continue; // B 时点尚不存在
+            }
+            String sFrom = atFrom.get(w.getId());
+            String kind;
+            if (sFrom == null) {
+                kind = DONE_STATUSES.contains(sTo) ? "COMPLETED" : "NEW"; // 期间新增且已完成的计入完成
+                if ("NEW".equals(kind)) {
+                    added++;
+                } else {
+                    added++;
+                    completed++;
+                }
+            } else if (sFrom.equals(sTo)) {
+                kind = "UNCHANGED";
+                unchanged++;
+            } else if (DONE_STATUSES.contains(sTo) && !DONE_STATUSES.contains(sFrom)) {
+                kind = "COMPLETED";
+                completed++;
+            } else {
+                kind = "CHANGED";
+                changed++;
+            }
+            if (!"UNCHANGED".equals(kind)) {
+                rows.add(new CompareRow(w.getId(), w.getCode(), w.getType(), w.getTitle(),
+                        sFrom, sTo, kind));
+            }
+        }
+        // 期间流转次数与大事（决策/基线，(from, to] 窗口）
+        LocalDateTime fromEnd = from.plusDays(1).atStartOfDay();
+        LocalDateTime toEnd = to.plusDays(1).atStartOfDay();
+        int transitionCount = 0;
+        for (WorkItemStatusLog log : logs) {
+            if (log.getAt() != null && !log.getAt().isBefore(fromEnd) && log.getAt().isBefore(toEnd)) {
+                transitionCount++;
+            }
+        }
+        List<DayEvent> periodEvents = new ArrayList<>();
+        for (Decision d : decisionMapper.selectList(new QueryWrapper<Decision>()
+                .eq("project_id", projectId).orderByAsc("id"))) {
+            if (d.getDecidedAt() != null && !d.getDecidedAt().isBefore(fromEnd)
+                    && d.getDecidedAt().isBefore(toEnd)) {
+                periodEvents.add(new DayEvent("DECISION",
+                        d.getDecidedAt().toLocalDate() + " 决策 " + d.getCode() + " 结论 " + d.getConclusion()));
+            }
+        }
+        for (Baseline b : baselineMapper.selectList(new QueryWrapper<Baseline>()
+                .eq("project_id", projectId).orderByAsc("id"))) {
+            if (!b.getCreatedAt().isBefore(fromEnd) && b.getCreatedAt().isBefore(toEnd)) {
+                periodEvents.add(new DayEvent("BASELINE",
+                        b.getCreatedAt().toLocalDate() + " 建立基线 " + b.getName()));
+            }
+        }
+        return new Compare(from, to, kpis(allItems, atFrom), kpis(allItems, atTo),
+                added, completed, changed, unchanged, transitionCount, rows, periodEvents);
+    }
+
+    /** 时点 KPI 汇总（asOf 与 compare 共用口径）。 */
+    static Kpis kpis(List<WorkItem> items, Map<Long, String> statusAt) {
+        int reqTotal = 0;
+        int reqAccepted = 0;
+        int defectsOpen = 0;
+        int wip = 0;
+        int risksOpen = 0;
+        for (WorkItem w : items) {
+            String status = statusAt.get(w.getId());
+            if (status == null) {
+                continue;
+            }
+            switch (w.getType()) {
+                case "REQUIREMENT" -> {
+                    reqTotal++;
+                    if ("Accepted".equals(status)) {
+                        reqAccepted++;
+                    }
+                }
+                case "DEFECT" -> {
+                    if (!"Closed".equals(status)) {
+                        defectsOpen++;
+                    }
+                }
+                case "RISK" -> {
+                    if (!"Closed".equals(status) && !"Accepted".equals(status)) {
+                        risksOpen++;
+                    }
+                }
+                default -> { }
+            }
+            if (WIP_STATUSES.contains(status)) {
+                wip++;
+            }
+        }
+        return new Kpis(reqTotal, reqAccepted, defectsOpen, wip, risksOpen);
+    }
 
     private final ProjectMapper projectMapper;
     private final WorkItemMapper workItemMapper;

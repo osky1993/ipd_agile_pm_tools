@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import ProjectChips from '@/components/ProjectChips.vue'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
-import { timeMachineApi, type Timeline, type AsOf, type AsOfItem, type EventPoint } from '@/api/timemachine'
+import { timeMachineApi, type Timeline, type AsOf, type AsOfItem, type EventPoint, type Compare, type CompareRow } from '@/api/timemachine'
 import { statusLabel, typeLabel } from '@/utils/labels'
 
 /**
@@ -62,7 +62,58 @@ async function loadTimeline() {
   if (!projectId.value) return
   timeline.value = await timeMachineApi.timeline(projectId.value)
   sliderDay.value = totalDays.value // 默认停在今天
-  await loadAsOf()
+  initCompareDefaults()
+  await (mode.value === 'compare' ? loadCompare() : loadAsOf())
+}
+
+// ---------- A/B 双时点对比（V2） ----------
+const mode = ref<'single' | 'compare'>('single')
+const compareFrom = ref('')
+const compareTo = ref('')
+const compare = ref<Compare | null>(null)
+const compareKind = ref<'' | 'NEW' | 'COMPLETED' | 'CHANGED'>('')
+
+function initCompareDefaults() {
+  if (!timeline.value) return
+  // 默认 A=最近一次决策/基线日（"上次承诺以来发生了什么"），无则项目起点；B=今天
+  const anchor = [...timeline.value.events].reverse()
+    .find((e) => e.kind === 'DECISION' || e.kind === 'BASELINE')
+  compareFrom.value = anchor?.date ?? timeline.value.start
+  compareTo.value = timeline.value.end
+}
+
+async function loadCompare() {
+  if (!projectId.value || !compareFrom.value || !compareTo.value) return
+  loading.value = true
+  try {
+    compare.value = await timeMachineApi.compare(projectId.value, compareFrom.value, compareTo.value)
+  } finally {
+    loading.value = false
+  }
+}
+
+function switchMode(m: 'single' | 'compare') {
+  mode.value = m
+  if (m === 'compare') {
+    if (!compareFrom.value) initCompareDefaults()
+    loadCompare()
+  } else {
+    loadAsOf()
+  }
+}
+
+const KIND_TAG: Record<string, { label: string; type: string }> = {
+  NEW: { label: '新增', type: 'danger' },
+  COMPLETED: { label: '完成', type: 'success' },
+  CHANGED: { label: '推进', type: '' },
+}
+const filteredCompareRows = computed<CompareRow[]>(() => {
+  const rows = compare.value?.rows ?? []
+  return compareKind.value ? rows.filter((r) => r.kind === compareKind.value) : rows
+})
+const delta = (a: number, b: number) => {
+  const d = b - a
+  return d > 0 ? `+${d}` : `${d}`
 }
 
 async function loadAsOf() {
@@ -127,23 +178,114 @@ watch(projectId, loadTimeline)
               @click="jumpTo(e.date)">{{ KIND_META[e.kind]?.icon }}</span>
           </el-tooltip>
         </div>
-        <el-slider v-model="sliderDay" :min="0" :max="totalDays" :show-tooltip="false" @change="loadAsOf" />
+        <el-slider v-if="mode === 'single'" v-model="sliderDay" :min="0" :max="totalDays" :show-tooltip="false" @change="loadAsOf" />
         <div class="rail-ctrl">
           <span class="rail-range">{{ timeline.start }}</span>
           <div class="rail-mid">
-            <el-button size="small" @click="jumpEvent(-1)">◀ 上一事件</el-button>
-            <el-date-picker :model-value="currentDate" type="date" value-format="YYYY-MM-DD" size="small"
-              style="width:140px" :clearable="false"
-              :disabled-date="(d: Date) => d.getTime() < parse(timeline!.start) || d.getTime() > parse(timeline!.end)"
-              @update:model-value="(v: string) => jumpTo(v)" />
-            <el-button size="small" @click="jumpEvent(1)">下一事件 ▶</el-button>
-            <el-button size="small" type="primary" plain @click="jumpTo(timeline.end)">回到今天</el-button>
+            <el-radio-group :model-value="mode" size="small" @change="(v: any) => switchMode(v)">
+              <el-radio-button value="single">单点回溯</el-radio-button>
+              <el-radio-button value="compare">A/B 对比</el-radio-button>
+            </el-radio-group>
+            <template v-if="mode === 'single'">
+              <el-button size="small" @click="jumpEvent(-1)">◀ 上一事件</el-button>
+              <el-date-picker :model-value="currentDate" type="date" value-format="YYYY-MM-DD" size="small"
+                style="width:140px" :clearable="false"
+                :disabled-date="(d: Date) => d.getTime() < parse(timeline!.start) || d.getTime() > parse(timeline!.end)"
+                @update:model-value="(v: string) => jumpTo(v)" />
+              <el-button size="small" @click="jumpEvent(1)">下一事件 ▶</el-button>
+              <el-button size="small" type="primary" plain @click="jumpTo(timeline.end)">回到今天</el-button>
+            </template>
+            <template v-else>
+              <el-date-picker v-model="compareFrom" type="date" value-format="YYYY-MM-DD" size="small"
+                style="width:140px" :clearable="false" placeholder="时点 A" @change="loadCompare" />
+              <span class="cmp-arrow">→</span>
+              <el-date-picker v-model="compareTo" type="date" value-format="YYYY-MM-DD" size="small"
+                style="width:140px" :clearable="false" placeholder="时点 B" @change="loadCompare" />
+              <el-button size="small" plain @click="initCompareDefaults(); loadCompare()">上次承诺→今天</el-button>
+            </template>
           </div>
           <span class="rail-range">{{ timeline.end }}（今天）</span>
         </div>
       </el-card>
 
-      <div v-loading="loading">
+      <!-- A/B 对比面板 -->
+      <div v-if="mode === 'compare'" v-loading="loading">
+        <template v-if="compare">
+          <div class="kpi-row five">
+            <div class="kpi">
+              <b>{{ compare.kpisFrom.reqAccepted }}/{{ compare.kpisFrom.reqTotal }} → {{ compare.kpisTo.reqAccepted }}/{{ compare.kpisTo.reqTotal }}</b>
+              <span>需求验收（{{ delta(compare.kpisFrom.reqAccepted, compare.kpisTo.reqAccepted) }}）</span>
+            </div>
+            <div class="kpi">
+              <b>{{ compare.kpisFrom.defectsOpen }} → {{ compare.kpisTo.defectsOpen }}</b>
+              <span>未关缺陷（{{ delta(compare.kpisFrom.defectsOpen, compare.kpisTo.defectsOpen) }}）</span>
+            </div>
+            <div class="kpi">
+              <b>{{ compare.kpisFrom.wip }} → {{ compare.kpisTo.wip }}</b>
+              <span>WIP（{{ delta(compare.kpisFrom.wip, compare.kpisTo.wip) }}）</span>
+            </div>
+            <div class="kpi">
+              <b>{{ compare.kpisFrom.risksOpen }} → {{ compare.kpisTo.risksOpen }}</b>
+              <span>开放风险（{{ delta(compare.kpisFrom.risksOpen, compare.kpisTo.risksOpen) }}）</span>
+            </div>
+            <div class="kpi"><b>{{ compare.transitionCount }}</b><span>期间流转次数</span></div>
+          </div>
+
+          <el-row :gutter="14">
+            <el-col :span="15">
+              <el-card shadow="never">
+                <template #header>
+                  <div class="list-head">
+                    <b>{{ compare.from }} → {{ compare.to }} 变化明细</b>
+                    <el-radio-group v-model="compareKind" size="small">
+                      <el-radio-button label="">全部 ({{ compare.rows.length }})</el-radio-button>
+                      <el-radio-button label="NEW">新增 ({{ compare.rows.filter(r => r.kind === 'NEW').length }})</el-radio-button>
+                      <el-radio-button label="COMPLETED">完成 ({{ compare.completed }})</el-radio-button>
+                      <el-radio-button label="CHANGED">推进 ({{ compare.changed }})</el-radio-button>
+                    </el-radio-group>
+                  </div>
+                </template>
+                <el-table :data="filteredCompareRows" size="small" border stripe class="clickable"
+                  max-height="480" @row-click="openItem">
+                  <el-table-column prop="code" label="编号" width="130">
+                    <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="86">
+                    <template #default="{ row }">{{ typeLabel(row.type) }}</template>
+                  </el-table-column>
+                  <el-table-column prop="title" label="标题" show-overflow-tooltip />
+                  <el-table-column label="结论" width="80">
+                    <template #default="{ row }">
+                      <el-tag size="small" :type="KIND_TAG[row.kind]?.type">{{ KIND_TAG[row.kind]?.label }}</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态（A → B）" width="180">
+                    <template #default="{ row }">
+                      {{ row.statusFrom ? statusLabel(row.statusFrom, row.type) : '（不存在）' }} → {{ statusLabel(row.statusTo, row.type) }}
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <p v-if="!compare.rows.length" class="ev-empty">两个时点之间没有任何变化（未变 {{ compare.unchanged }} 项）。</p>
+              </el-card>
+            </el-col>
+            <el-col :span="9">
+              <el-card shadow="never">
+                <template #header><b>期间大事（{{ compare.periodEvents.length }}）</b></template>
+                <div v-if="compare.periodEvents.length" class="ev-list">
+                  <div v-for="(e, i) in compare.periodEvents" :key="i" class="ev-row">
+                    <span class="ev-icon">{{ DAY_EVENT_ICON[e.kind] ?? '·' }}</span>
+                    <span class="ev-text">{{ e.text }}</span>
+                  </div>
+                </div>
+                <div v-else class="ev-empty">期间无决策与基线事件。</div>
+                <p class="cmp-note">未变 {{ compare.unchanged }} 项不在明细中；对比同样含"后已删除"项。</p>
+              </el-card>
+            </el-col>
+          </el-row>
+        </template>
+      </div>
+
+      <div v-else v-loading="loading">
         <template v-if="asOf">
           <!-- 时点 KPI -->
           <div class="kpi-row">
@@ -245,6 +387,10 @@ watch(projectId, loadTimeline)
 .rail-range { font-size: 12px; color: #909399; font-family: monospace; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+.kpi-row.five { grid-template-columns: repeat(5, 1fr); }
+.kpi-row.five .kpi b { font-size: 15px; }
+.cmp-arrow { color: #909399; }
+.cmp-note { font-size: 12px; color: #c0c4cc; margin-top: 10px; }
 .kpi { text-align: center; background: #fff; border: 1px solid #ebeef5; border-radius: 6px; padding: 10px 4px; }
 .kpi b { display: block; font-size: 20px; color: #409eff; }
 .kpi.danger b { color: #f56c6c; }

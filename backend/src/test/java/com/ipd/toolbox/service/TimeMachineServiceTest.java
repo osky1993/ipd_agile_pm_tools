@@ -68,4 +68,30 @@ class TimeMachineServiceTest {
         Map<Long, String> at = TimeMachineService.replay(items, List.of(), LocalDate.of(2026, 7, 10));
         assertFalse(at.containsKey(1L)); // 7-11 00:00 创建 ≥ 7-10 收盘 → 7-10 不存在
     }
+
+    @Test
+    void 双时点KPI口径_两次回放独立() {
+        List<WorkItem> items = List.of(
+                wi(1L, "REQUIREMENT", "2026-07-01T09:00:00", 0),
+                wi(2L, "DEFECT", "2026-07-01T09:00:00", 0),
+                wi(3L, "RISK", "2026-07-20T09:00:00", 0)); // B 时点才存在
+        List<WorkItemStatusLog> logs = List.of(
+                log(1L, "Ready", "2026-07-02T10:00:00"),
+                log(1L, "In Progress", "2026-07-12T10:00:00"),
+                log(1L, "Verification", "2026-07-18T10:00:00"),
+                log(1L, "Accepted", "2026-07-25T10:00:00"),
+                log(2L, "Closed", "2026-07-22T10:00:00"));
+
+        Map<Long, String> atA = TimeMachineService.replay(items, logs, LocalDate.of(2026, 7, 10));
+        Map<Long, String> atB = TimeMachineService.replay(items, logs, LocalDate.of(2026, 7, 30));
+        TimeMachineService.Kpis a = TimeMachineService.kpis(items, atA);
+        TimeMachineService.Kpis b = TimeMachineService.kpis(items, atB);
+
+        assertEquals(0, a.reqAccepted());
+        assertEquals(1, a.defectsOpen()); // 当时 Open
+        assertEquals(0, a.risksOpen());   // 尚不存在
+        assertEquals(1, b.reqAccepted());
+        assertEquals(0, b.defectsOpen()); // 已关闭
+        assertEquals(1, b.risksOpen());   // 期间登记
+    }
 }
