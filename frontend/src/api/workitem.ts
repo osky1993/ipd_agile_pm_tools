@@ -1,5 +1,7 @@
 import http from './http'
 
+/** 工作项与批量操作 API：覆盖工作项 CRUD、追溯关系、导入导出与元数据。 */
+
 export interface WorkItem {
   id: number
   code: string
@@ -50,19 +52,31 @@ export interface StatusLog {
 }
 
 export const workItemApi = {
+  /** 查询项目工作项（可按类型过滤）。 */
   list: (projectId: number, type?: string) =>
     http.get<any, WorkItem[]>('/work-items', { params: { projectId, type } }),
+  /** 读取单条工作项详情。 */
   get: (id: number) => http.get<any, WorkItem>(`/work-items/${id}`),
+  /** 创建工作项（需求/缺陷/任务/...）。 */
   create: (data: Partial<WorkItem>) => http.post<any, WorkItem>('/work-items', data),
+  /** 更新工作项属性。 */
   update: (id: number, data: Partial<WorkItem>) => http.put<any, WorkItem>(`/work-items/${id}`, data),
+  /** 提交流转动作，记录原因用于状态历史。 */
   transition: (id: number, toStatus: string, reason?: string) =>
     http.post<any, WorkItem>(`/work-items/${id}/transition`, { toStatus, reason }),
+  /** 获取可达下一个状态列表（状态机驱动）。 */
   nextStatuses: (id: number) => http.get<any, string[]>(`/work-items/${id}/next-statuses`),
+  /** 查询单条工作项状态历史。 */
   statusHistory: (id: number) => http.get<any, StatusLog[]>(`/work-items/${id}/status-history`),
+  /** 查询工作项审计日志（操作与时间轴）。 */
   audit: (id: number) => http.get<any, AuditEvent[]>(`/work-items/${id}/audit`),
+  /** 查询追溯关系。 */
   traces: (id: number) => http.get<any, TraceView[]>(`/work-items/${id}/traces`),
+  /** 模糊搜索工作项（code/title）。 */
   search: (q: string) => http.get<any, WorkItem[]>('/work-items/search', { params: { q } }),
+  /** 导入树形结构模板下载 URL。 */
   treeTemplateUrl: () => '/api/work-items/import-template.xlsx',
+  /** 上传树形结构 Excel（父子关系导入）。 */
   importTree: (projectId: number, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -71,6 +85,7 @@ export const workItemApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  /** 上传扁平化 CSV / XLS 目录导入。 */
   importCsv: (projectId: number, file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -107,7 +122,9 @@ export const riskApi = {
 }
 
 export const riskChangeExcelApi = {
+  /** 风险/变更导入模板 URL；type 控制模板字段。 */
   templateUrl: (type: 'RISK' | 'CHANGE') => `/api/work-items/import-excel-template.xlsx?type=${type}`,
+  /** 批量导入风险/变更（返回逐条成功与失败）。 */
   importExcel: (projectId: number, type: 'RISK' | 'CHANGE', file: File) => {
     const form = new FormData()
     form.append('file', file)
@@ -119,6 +136,7 @@ export const riskChangeExcelApi = {
 }
 
 export const traceApi = {
+  /** 新建追溯关系。 */
   create: (data: {
     projectId: number
     sourceType: string
@@ -127,10 +145,13 @@ export const traceApi = {
     targetId: number
     relation: string
   }) => http.post('/traces', data),
+  /** 删除追溯关系。 */
   delete: (id: number) => http.delete(`/traces/${id}`),
 }
 
 export const metaApi = {
+  /** 工作项类型字典。 */
   workItemTypes: () => http.get<any, { value: string; abbr: string; label: string }[]>('/meta/work-item-types'),
+  /** 追溯关系字典。 */
   traceRelations: () => http.get<any, string[]>('/meta/trace-relations'),
 }

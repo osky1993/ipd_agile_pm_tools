@@ -44,11 +44,19 @@ public class RiskChangeExcelService {
     private final WorkItemService workItemService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 风险/变更导入服务依赖注入。
+     * workItemService 用于落库，ObjectMapper 仅用于构造风险 ext_fields JSON。
+     */
     public RiskChangeExcelService(WorkItemService workItemService, ObjectMapper objectMapper) {
         this.workItemService = workItemService;
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 解析 Excel 为内存行结构（纯函数），第一行为表头自动忽略。
+     * 使用 DataFormatter 兼容数字/日期/空单元格，统一返回 trim 后文本。
+     */
     static List<ExcelRow> readRows(InputStream in) throws IOException {
         List<ExcelRow> out = new ArrayList<>();
         DataFormatter fmt = new DataFormatter();
@@ -70,6 +78,10 @@ public class RiskChangeExcelService {
         return out;
     }
 
+    /**
+     * 批量导入入口（RISK/CHANGE）。
+     * PM-only；失败行不会中断全量，返回成功数和错误列表供前端提示修复。
+     */
     @Transactional
     public Map<String, Object> importExcel(Long projectId, String type, InputStream in) {
         UserContext.requireRole("PM");
@@ -100,6 +112,10 @@ public class RiskChangeExcelService {
         return result;
     }
 
+    /**
+     * 处理单行记录：校验字段、组装 WorkItem（风险会写入 ext_fields），并交由 WorkItemService.create 落库。
+     * 校验不通过抛异常，上层收集并继续处理下一行。
+     */
     private int importRow(Long projectId, String type, ExcelRow r) {
         if (r.title().isBlank()) {
             throw new BusinessException("标题不能为空");
@@ -162,6 +178,10 @@ public class RiskChangeExcelService {
         return 1;
     }
 
+    /**
+     * 解析 1~5 的整数量表，空值返回 null。
+     * 越界或非数字会抛业务异常并附字段标签。
+     */
     private static Integer parseScale(String s, String label) {
         if (s == null || s.isBlank()) {
             return null;
@@ -177,6 +197,10 @@ public class RiskChangeExcelService {
         }
     }
 
+    /**
+     * 生成导入模板（示例数据 + 表头）。
+     * 返回二进制 XLSX，供前端直接下载到本地。
+     */
     public byte[] template(String type) {
         if (!TYPES.contains(type)) {
             throw new BusinessException("模板类型仅支持 RISK / CHANGE");

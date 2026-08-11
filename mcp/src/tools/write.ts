@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { api, textResult } from '../client.js'
 
+/** 写工具：可落库动作集合，均经过后台状态机/守卫后生效。 */
 /**
  * 写工具：create_work_items 默认 dry_run 预览（AI 拆条的安全阀）；
  * 状态流转/建链由后端状态机与守卫兜底。

@@ -7,6 +7,12 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 测试执行记录实体。
+ *
+ * <p>记录某条用例在某版本/时间下的执行结果与实际输出，
+ * 支撑缺陷关联与发布质量验证的闭环证据。
+ */
 @Data
 @TableName("test_run")
 public class TestRun {

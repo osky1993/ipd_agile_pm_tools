@@ -1,5 +1,7 @@
 import http from './http'
 
+/** 基线 API：基线清单、明细与差异对比入口。 */
+
 export interface Baseline {
   id: number
   projectId: number
@@ -58,9 +60,14 @@ export interface Diff {
   rows: DiffRow[]
 }
 
+/** 基线管理接口：查看历史快照、对比偏差用于治理台。 */
 export const baselineApi = {
+  /** 查询项目的基线列表。 */
   list: (projectId: number) => http.get<any, Baseline[]>('/baselines', { params: { projectId } }),
+  /** 拉取某条基线详情及其明细条目。 */
   get: (id: number) => http.get<any, { baseline: Baseline; items: BaselineItem[] }>(`/baselines/${id}`),
+  /** 对比当前项目状态与基线，返回新增/移除/延期等偏差。 */
   diff: (id: number) => http.get<any, Diff>(`/baselines/${id}/diff`),
+  /** 手工创建基线（通常用于阶段性冻结）。 */
   create: (projectId: number, name?: string) => http.post<any, Baseline>('/baselines', { projectId, name }),
 }

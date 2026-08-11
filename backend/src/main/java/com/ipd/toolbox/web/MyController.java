@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/my")
+/**
+ * 个人工作台控制器：汇总当前用户的“今日视图”，用于我的代办与预警快速定位。
+ * 典型入口是 Dashboard 顶部卡片与“我的事项”页。
+ */
 public class MyController {
 
     private final MyService service;
@@ -18,7 +22,7 @@ public class MyController {
         this.service = service;
     }
 
-    /** 「我的一天」：跨项目聚合当前用户的进行中/超期/待复测/临近事项与关键预警。 */
+    /** 个人工作台：返回我的当前代办集合（进行中、超期、待复测、临近到期）和个人风险预警。 */
     @GetMapping("/today")
     public Result<MyService.Today> today() {
         Long uid = UserContext.currentUserId();

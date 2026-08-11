@@ -30,17 +30,45 @@ public class TraceLinkService {
     private final WorkItemMapper workItemMapper;
     private final AuditService audit;
 
+    /**
+     * 追溯服务依赖的持久化与引用补齐组件都在这里注入。
+     * - TraceLinkMapper：链路读写；
+     * - WorkItemMapper：链路另一端为工作项时补齐 code/title；
+     * - AuditService：所有新增/删除变更会记录可追溯审计。
+     *
+     * <p>更新口径说明：本服务不承担跨域写权限判断，由上层在业务语义层做角色与状态门禁。</p>
+     */
     public TraceLinkService(TraceLinkMapper mapper, WorkItemMapper workItemMapper, AuditService audit) {
         this.mapper = mapper;
         this.workItemMapper = workItemMapper;
         this.audit = audit;
     }
 
-    /** 关联视图：direction=OUT 表示 from 本对象指向 other；IN 表示 other 指向本对象。 */
+    /**
+     * 关联视图：direction=OUT 表示 from 本对象指向 other；IN 表示 other 指向本对象。
+     *
+     * <p>该视图用于前端图谱/详情页展示，不改变持久化模型，仅做一次对象补齐（当另一端为 WORK_ITEM 时补充 code/title）。</p>
+     */
     public record TraceView(Long linkId, String direction, String relation,
                             String otherType, Long otherId, String otherCode, String otherTitle) {
     }
 
+    /**
+     * 创建追溯关系（含关系白名单校验、重复检测与审计）。
+     *
+     * <p>更新粒度：
+     * <ul>
+     *   <li>关系白名单校验：不在 {@link #RELATIONS} 中直接拒绝。</li>
+     *   <li>结构校验：禁止 source 与 target 完全同一对象形成自环。</li>
+     *   <li>幂等策略：同源-同目标-同关系重复提交返回失败，而不是重复插入。</li>
+     *   <li>持久化：统一注入创建人、创建时间后入库。</li>
+     *   <li>副作用：写入 `TRACE_LINK CREATE` 审计，后续可按审计 ID 回放关系落库语义。</li>
+     * </ul>
+     * <p>失败策略：任一验证失败抛出业务异常并终止写入；重复关系直接拒绝，当前实现不做软重复合并。</p>
+     *
+     * @param link 待创建追溯关系实体（projectId/source/target/relation 均不能为空）
+     * @return 入库后的追溯关系（含数据库生成 ID）
+     */
     @Transactional
     public TraceLink create(TraceLink link) {
         if (!RELATIONS.contains(link.getRelation())) {
@@ -67,6 +95,14 @@ public class TraceLinkService {
         return link;
     }
 
+    /**
+     * 删除追溯关系。
+     *
+     * <p>边界：幂等删除。若 ID 不存在直接返回，不抛 NPE；若存在则先读出旧值再删除，
+     * 之后记录 DELETE 审计并将旧镜像放入审计 before-image，便于事后追溯。</p>
+     *
+     * @param id 追溯关系 ID
+     */
     @Transactional
     public void delete(Long id) {
         TraceLink link = mapper.selectById(id);
@@ -77,7 +113,20 @@ public class TraceLinkService {
         audit.record(link.getProjectId(), "TRACE_LINK", id, "DELETE", "删除追溯关系", link, null);
     }
 
-    /** 返回该对象的全部上下游关联（含正反向），并解析工作项标题。 */
+    /**
+     * 返回某对象的全部上下游关联（含正反向），并解析对端工作项标题。
+     *
+     * <p>查询维度：
+     * <ul>
+     *   <li>OUT：以传入对象为 source，表示该对象影响/指向他人。</li>
+     *   <li>IN：以传入对象为 target，表示他人影响/指向该对象。</li>
+     * </ul>
+     * 不做去重：同向同关系的重复记录按数据库实际存在返回，需依赖上游治理。
+     * <p>可用性边界：本方法执行两次 DB 扫描（IN/OUT），结果规模与对象复杂度线性相关；大规模图谱应结合分页或搜索端缓存。</p>
+     *
+     * @param objectType 对象类型
+     * @param objectId 对象 ID
+     */
     public List<TraceView> around(String objectType, Long objectId) {
         List<TraceView> views = new ArrayList<>();
         // 出边：本对象为 source
@@ -93,6 +142,17 @@ public class TraceLinkService {
         return views;
     }
 
+    /**
+     * 将追踪实体转为前端展示视图对象。
+     *
+     * <p>读模型转换规则：
+     * <ul>
+     *   <li>默认 `otherCode` 直接拼接为 `otherType#otherId`。</li>
+     *   <li>当另一端是 WORK_ITEM 时按 ID 反查并补齐 code/title，用于 UI 友好展示。</li>
+     *   <li>目标对象不存在时保持兜底空字符串，保持链路展示不因脏数据中断。</li>
+     * </ul>
+     * <p>副作用：无副作用，仅在 WorkItem 丢失时返回可读兜底值。</p>
+     */
     private TraceView toView(Long linkId, String direction, String relation, String otherType, Long otherId) {
         String code = otherType + "#" + otherId;
         String title = "";

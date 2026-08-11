@@ -25,6 +25,11 @@ public class GateCriterionService {
     private final CodeGenerator codeGenerator;
     private final AuditService audit;
 
+    /**
+     * GateCriterion 服务依赖注入。
+     * mapper 做 CRUD；projectMapper 提供项目基础属性用于编码；codeGenerator 生成规则编码；
+     * audit 记录准入条件的全量变更痕迹。
+     */
     public GateCriterionService(GateCriterionMapper mapper, ProjectMapper projectMapper,
                                 CodeGenerator codeGenerator, AuditService audit) {
         this.mapper = mapper;
@@ -33,7 +38,15 @@ public class GateCriterionService {
         this.audit = audit;
     }
 
-    /** 按项目列出，可选按 stageGateId 或 isReadiness 过滤。 */
+    /**
+     * 按项目列出准入条件（只读）：
+     * <p>支持按阶段门和 readiness 标识过滤，返回按 domain/id 升序，
+     * 便于同域人工核对与分页展示。</p>
+     *
+     * @param projectId 项目 ID，必填
+     * @param stageGateId 阶段门过滤条件（可选）
+     * @param isReadiness 是否 readiness 条目（可选）
+     */
     public List<GateCriterion> list(Long projectId, Long stageGateId, Integer isReadiness) {
         QueryWrapper<GateCriterion> qw = new QueryWrapper<GateCriterion>().eq("project_id", projectId);
         if (stageGateId != null) {
@@ -46,6 +59,17 @@ public class GateCriterionService {
         return mapper.selectList(qw);
     }
 
+    /**
+     * 新增准入条件（写链路）：
+     * <ol>
+     *   <li>校验 PM/QUALITY 权限与项目存在性。</li>
+     *   <li>校验条件描述非空，补齐默认状态/判定类型与默认开关。</li>
+     *   <li>生成编码后入库，设置创建与更新时间/操作者。</li>
+     *   <li>记录 CREATE 审计动作。</li>
+     * </ol>
+     * <p>更新粒度：新增一条准入条件主记录，不修改其他聚合对象。</p>
+     * <p>失败策略：权限、唯一约束或数据库异常都会失败并中断创建。</p>
+     */
     @Transactional
     public GateCriterion create(GateCriterion c) {
         UserContext.requireRole("PM", "QUALITY");
@@ -74,6 +98,17 @@ public class GateCriterionService {
         return c;
     }
 
+    /**
+     * 更新准入条件（写链路）：
+     * <ol>
+     *   <li>读取旧值并仅按非空字段做补丁覆盖。</li>
+     *   <li>变更状态/owner 时记录前置值，最终决定审计动作类型（STATUS/OWNER/UPDATE）。</li>
+     *   <li>若状态进入 WAIVED，要求 waiverReason 与 waiverDue 同时存在；
+     *   未满足则失败并回滚。</li>
+     *   <li>更新主表并记录对应更新动作。</li>
+     * </ol>
+     * <p>更新粒度：仅影响准入条件本体字段，不处理阶段门/工作项关系。</p>
+     */
     @Transactional
     public GateCriterion update(Long id, GateCriterion patch) {
         UserContext.requireRole("PM", "QUALITY");
@@ -114,6 +149,14 @@ public class GateCriterionService {
         return old;
     }
 
+    /**
+     * 删除准入条件（硬删）：
+     * <ul>
+     *   <li>查不到记录时直接返回，保持幂等语义。</li>
+     *   <li>存在则删除前先读旧值，删除后写 DELETE 审计留痕。</li>
+     * </ul>
+     * <p>失败策略：权限不足或数据库异常会抛出并终止删除。</p>
+     */
     @Transactional
     public void delete(Long id) {
         UserContext.requireRole("PM", "QUALITY");

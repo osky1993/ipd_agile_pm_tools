@@ -1,5 +1,7 @@
 import http from './http'
 
+/** 我的工作台 API。 */
+
 export interface MyItem {
   id: number
   code: string
@@ -41,5 +43,6 @@ export interface MyToday {
 }
 
 export const myApi = {
+  /** 获取“我的一天”聚合数据：我的事项 + 即将到期项 + 项目预警。 */
   today: () => http.get<any, MyToday>('/my/today'),
 }

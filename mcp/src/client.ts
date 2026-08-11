@@ -11,6 +11,12 @@ interface Result<T> {
   data: T
 }
 
+/**
+ * 统一请求封装：
+ * - 自动拼接 /api 前缀
+ * - 注入 Bearer token（如未配置则走无认证）
+ * - 将 Result.code != 0 的调用统一抛异常，便于 MCP 工具统一错误处理
+ */
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const resp = await fetch(`${BASE_URL}/api${path}`, {
     method,

@@ -23,6 +23,10 @@ public class ReadinessService {
     private final GateCriterionMapper criterionMapper;
     private final WorkItemMapper workItemMapper;
 
+    /**
+     * 构造注入：就绪域评估同时依赖检查项元数据与需求能力状态。
+     * 通过这两个 mapper 将“门槛完成率”和“需求落地度”在同一份摘要里返回。
+     */
     public ReadinessService(GateCriterionMapper criterionMapper, WorkItemMapper workItemMapper) {
         this.criterionMapper = criterionMapper;
         this.workItemMapper = workItemMapper;
@@ -30,6 +34,9 @@ public class ReadinessService {
 
     public record DomainReadiness(String domain, int total, int met, int partial, int notReady,
                                   int waived, List<String> redlineUnmet) {
+        /**
+         * 按当前域内完成项比例返回 MET 口径完成率（百分比）。
+         */
         public int metPercent() {
             return total == 0 ? 0 : Math.round(met * 100f / total);
         }
@@ -45,6 +52,15 @@ public class ReadinessService {
     public record Summary(List<DomainReadiness> domains, Overall overall) {
     }
 
+    /**
+     * 读取准备度检查项。
+     *
+     * @param projectId 项目 ID
+     * @param domain 可选域过滤；空则返回全部域
+     * @return 域内所有就绪项，按 domain 和 id 排序
+     *
+     * <p>仅读 is_readiness=1 的检查项。domain 为空时不做过滤并返回全部域，便于 readiness 汇总复用。</p>
+     */
     public List<GateCriterion> items(Long projectId, String domain) {
         QueryWrapper<GateCriterion> qw = new QueryWrapper<GateCriterion>()
                 .eq("project_id", projectId).eq("is_readiness", 1);
@@ -54,6 +70,19 @@ public class ReadinessService {
         return criterionMapper.selectList(qw.orderByAsc("domain").orderByAsc("id"));
     }
 
+    /**
+     * 计算项目就绪综合视图。
+     *
+     * <p>域聚合统计每域 MET/PARTIAL/WAIVED/未就绪数，并汇总红线未满足项；
+     * 同时计算需求/能力 Accepted 进度用于整体是否可投放的辅助判定。</p>
+     *
+     * <p>更新粒度说明：
+     * 本方法无数据库写入；当任一域红线未满足时 reasons 非空；全部通过时 reasons 空且 ready=true。
+     * 未命中项（空列表）会被计为 total=0、met/partial/notReady/waived 全 0。</p>
+     *
+     * @param projectId 项目 ID
+     * @return 域级指标 + 整机就绪结论（ready=true 时 reasons 为空）
+     */
     public Summary summary(Long projectId) {
         List<GateCriterion> all = criterionMapper.selectList(new QueryWrapper<GateCriterion>()
                 .eq("project_id", projectId).eq("is_readiness", 1));
@@ -103,7 +132,15 @@ public class ReadinessService {
         return new Summary(domains, new Overall(ready, reqTotal, reqAccepted, reasons));
     }
 
-    /** 项目级准备度红线未满足清单（供 DCP 判断纳入，规划§8.4）。 */
+    /**
+     * 读取项目级红线未满足清单。
+     *
+     * <p>只返回 is_redline=1 且状态非 MET/WAIVED 的检查项编码，用于决策面板和 DCP 提前提醒；
+     * 结果不排序，按数据库返回顺序，强调“配置变更后的自然顺序”。</p>
+     *
+     * @param projectId 项目 ID
+     * @return 未满足红线代码列表
+     */
     public List<String> readinessRedlineUnmet(Long projectId) {
         List<String> codes = new ArrayList<>();
         for (GateCriterion c : criterionMapper.selectList(new QueryWrapper<GateCriterion>()

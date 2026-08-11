@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 // 第一版 7 个主要页面（规划§11）
+/** 路由总表：支持独立报告页与主布局嵌套页。 */
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
   // 多项目聚合大屏：独立于 MainLayout 的投屏页（菜单由 getRoutes 自动收录）
@@ -41,6 +42,12 @@ const router = createRouter({
   routes,
 })
 
+/**
+ * 全局鉴权守卫：
+ * - 无 token 且访问非 public 路由时跳登录
+ * - 已登录访问登录页时回 my
+ * - 未登录访问登录页时放行
+ */
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (!to.meta.public && !token) {

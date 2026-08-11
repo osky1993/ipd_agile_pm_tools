@@ -17,6 +17,10 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tests")
+/**
+ * 测试体系接口：覆盖测试用例生命周期管理、执行记录维护、导入导出文件处理。
+ * 与需求/缺陷/变更流程联动：用例状态变更会触发质量评估指标与缺陷池联动。
+ */
 public class TestController {
 
     private static final MediaType XLSX = MediaType.parseMediaType(
@@ -58,11 +62,13 @@ public class TestController {
                 .body(testExcelService.export(projectId));
     }
 
+    /** 查询项目下测试用例清单。 */
     @GetMapping("/cases")
     public Result<List<TestCaseService.CaseView>> listCases(@RequestParam Long projectId) {
         return Result.ok(testCaseService.list(projectId));
     }
 
+    /** 新增测试用例：可附带需求关联用于追溯。 */
     @PostMapping("/cases")
     public Result<TestCase> createCase(@RequestBody TestCase tc,
                                        @RequestParam(required = false) Long verifiesRequirementId) {
@@ -91,11 +97,13 @@ public class TestController {
         return Result.ok();
     }
 
+    /** 查询某用例最近执行记录（历史缺陷定位、回归趋势）。 */
     @GetMapping("/cases/{caseId}/runs")
     public Result<List<TestRun>> listRuns(@PathVariable Long caseId) {
         return Result.ok(testRunService.listByCase(caseId));
     }
 
+    /** 提交一次执行记录：可带实际结果与失败证据；默认自动生成缺陷联动。 */
     @PostMapping("/runs")
     public Result<TestRun> execute(@RequestBody TestRun run,
                                    @RequestParam(defaultValue = "true") boolean autoCreateDefect) {

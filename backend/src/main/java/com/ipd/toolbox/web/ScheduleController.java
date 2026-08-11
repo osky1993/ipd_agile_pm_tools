@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/schedule")
+/**
+ * 计划与排期控制器：提供关键路径/关键链推演接口。
+ * 与时序偏差预警、迭代节奏监控形成联动。
+ */
 public class ScheduleController {
 
     private final ScheduleService service;

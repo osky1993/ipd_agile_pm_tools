@@ -122,6 +122,34 @@ public class TreeImportService {
         return out;
     }
 
+    /**
+     * 导入能力树 xlsx 并按序号构建父子关系。
+     *
+     * 用途：
+     * 解析输入流中的树形工作项，进行类型推断/父序号映射后逐行落库，返回成功数与失败明细。
+     *
+     * 入参约束：
+     * - projectId：目标项目，必须存在且可写入。
+     * - in：Excel 输入流，必须包含可读 Sheet 且符合 readRows 口径（首行为表头）；
+     *       若解析失败直接抛业务异常。
+     *
+     * 更新粒度：
+     * - 对每条有效行，调用 workItemService.create 创建单条 WorkItem；
+     * - 通过 seq/parentSeq 建立父子关系映射（先后顺序受文件行序影响）；
+     * - 单行异常不回滚全部数据，记录到错误列表并继续下一行，
+     *   但该方法标注 @Transactional：具体回滚范围需依赖 create 内部异常边界（当前实现以行内捕获为主，
+     *   若发生未捕获异常则会触发事务回滚，返回全局失败）。
+     *
+     * 返回：
+     * 返回 Map：
+     * - created：成功创建条数；
+     * - errors：逐行错误列表（含行号与原因）。
+     *
+     * 异常与边界：
+     * - 非 PM 角色会在 requireRole() 阶段拒绝；
+     * - Excel 解析失败返回业务异常；
+     * - 行级异常会被降级为错误记录，不影响其他成功行的返回体验。
+     */
     @Transactional
     public Map<String, Object> importExcel(Long projectId, InputStream in) {
         UserContext.requireRole("PM");

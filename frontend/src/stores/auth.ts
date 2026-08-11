@@ -9,6 +9,7 @@ interface AuthState {
   roles: string[]
 }
 
+/** 认证状态（Pinia）：保存 token、用户信息与角色，负责登出清理本地持久化键。 */
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: localStorage.getItem('token') || '',

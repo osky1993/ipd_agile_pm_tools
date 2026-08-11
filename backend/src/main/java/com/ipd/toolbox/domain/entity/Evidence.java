@@ -5,6 +5,12 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 证据附件实体。
+ *
+ * <p>保存上传文件在系统中的元数据（名称、路径、指纹、大小、类型）与逻辑归属。
+ * 通过 category 区分正式证据与展示附件，支持合规与追溯。
+ */
 @Data
 @TableName("evidence")
 public class Evidence {

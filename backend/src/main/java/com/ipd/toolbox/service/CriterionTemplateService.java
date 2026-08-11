@@ -61,17 +61,47 @@ public class CriterionTemplateService {
     private final GateCriterionService criterionService;
     private final GateCriterionMapper criterionMapper;
 
+    /**
+     * 模板服务依赖注入。
+     * criterionService 提供单条条件创建与审计能力；
+     * criterionMapper 用于模板幂等比较（按 criterion 文本去重）。
+     */
     public CriterionTemplateService(GateCriterionService criterionService,
                                     GateCriterionMapper criterionMapper) {
         this.criterionService = criterionService;
         this.criterionMapper = criterionMapper;
     }
 
+    /**
+     * 返回内置模板清单。
+     *
+     * <p>静态常量 `TEMPLATES` 当前为内置字典（无数据库写入），
+     * 可用于前端下拉展示、模板预览和幂等应用前置比对。</p>
+     * <p>返回引用是不可变列表；调用方应按内容读取后再决策是否应用，不应修改返回对象。</p>
+     */
     public List<Template> templates() {
         return TEMPLATES;
     }
 
-    /** 应用模板：逐条走 create（编号/审计生效），已存在同文本条件的跳过。 */
+    /**
+     * 应用 DCP 模板到目标项目。
+     *
+     * <p>按模板 key 读取配置项，逐条判断同文本 criterion 是否已存在，存在则跳过（幂等）；不存在则创建。</p>
+     * <p>返回值返回实际创建与跳过统计，供调用方进行 UI 提示。</p>
+     * <p>更新粒度与失败边界：</p>
+     * <ul>
+     *   <li>只在 `project_id` 维度内进行文本级幂等比对，不跨项目复用。</li>
+     *   <li>每条未命中条件经过 `criterionService.create` 写入 `GATE_CRITERION`，默认带 `isRedline` 约束映射。</li>
+     *   <li>整个方法在事务内；任何一条条件写入失败会触发回滚。</li>
+     *   <li>返回 `codes` 是本次新建条件的 code 清单；`skipped` 是文本已存在导致跳过的项数。</li>
+     * </ul>
+     * <p>一致性说明：以 `criterion` 全文匹配作为幂等键，存在同文本不同大小写/空格差异时视为不同项（当前实现不做规范化归一化）。</p>
+     *
+     * @param projectId 项目 ID
+     * @param stageGateId 阶段门 ID（可空）
+     * @param templateKey 模板 key
+     * @return created/skipped/codes 统计
+     */
     @Transactional
     public Map<String, Object> apply(Long projectId, Long stageGateId, String templateKey) {
         Template tpl = TEMPLATES.stream().filter(t -> t.key().equals(templateKey)).findFirst()

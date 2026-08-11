@@ -34,6 +34,12 @@ public class DcpService {
 
     private final BaselineService baselineService;
 
+    /**
+     * DCP 决策服务依赖注入。
+     * criterionMapper 提供指标定义与状态；stageGateMapper 读取当前门数据；
+     * traceLinkMapper 统计证据；decisionService 负责决策落库；
+     * readinessService 注入跨职能红线；baselineService 负责通过/有条件通过时固化修订基线。
+     */
     public DcpService(GateCriterionMapper criterionMapper, StageGateMapper stageGateMapper,
                       TraceLinkMapper traceLinkMapper, DecisionService decisionService,
                       ReadinessService readinessService, ObjectMapper objectMapper,
@@ -63,6 +69,13 @@ public class DcpService {
     public record Overview(List<CriterionView> criteria, Snapshot snapshot) {
     }
 
+    /**
+     * DCP 页面总览（T505）：返回当前阶段门的清单与分类聚合快照。
+     * 快照包含分领域状态、红线未满足、证据缺失、责任人缺失与待处理项数量，供前端状态判断与人工决策。
+     *
+     * <p>返回结构中的 snapshot 侧重可视化，不带分页和排序规则；overview 只读执行，无数据库写入。
+     * readinessService 返回红线项在此会按“准备度红线”追加到同一清单。</p>
+     */
     public Overview overview(Long stageGateId) {
         StageGate gate = stageGateMapper.selectById(stageGateId);
         List<GateCriterion> criteria = criterionMapper.selectList(new QueryWrapper<GateCriterion>()
@@ -124,6 +137,11 @@ public class DcpService {
      * - PASS 时若存在红线未满足，不允许判通过（守卫 GUARD_REDLINE_UNMET）；
      * - CONDITIONAL 必须绑定遗留风险 + 完成期限；
      * - 决策固化准备度快照，只增不改。
+     *
+     * <p>副作用：
+     * 1) 审批通过/条件通过会调用 DecisionService.record 落库；
+     * 2) 对 PASS/CONDITIONAL 再创建并固化一条基线（可重复评审覆盖）；
+     * 3) 决策结论校验与红线守卫在此方法内兜底，确保 UI 端不会绕过规则。</p>
      */
     @Transactional
     public Decision review(Long stageGateId, String conclusion, String reason,
@@ -166,12 +184,27 @@ public class DcpService {
         return saved;
     }
 
+    /**
+     * 证据数量统计：按标准关系名 evidences 统计当前标准关联的 TraceLink 数量。
+     * 未命中时返回 0，避免上游空指针并保持状态统计稳定。
+     *
+     * @param criterionId 标准 ID
+     * @return 证据数量；null 场景按 0 兜底
+     */
     private long evidenceCount(Long criterionId) {
         Long n = traceLinkMapper.selectCount(new QueryWrapper<TraceLink>()
                 .eq("source_type", "GATE_CRITERION").eq("source_id", criterionId).eq("relation", "evidences"));
         return n == null ? 0 : n;
     }
 
+    /**
+     * 将快照对象序列化为 JSON。
+     *
+     * <p>序列化异常视为兼容退化：返回 null，由上游决策仍可继续落库。
+     * 该策略牺牲快照可追溯性换取决策链路可用性，属于“不中断治理流程”选择。</p>
+     *
+     * @param o 待序列化对象
+     */
     private String toJson(Object o) {
         try {
             return objectMapper.writeValueAsString(o);

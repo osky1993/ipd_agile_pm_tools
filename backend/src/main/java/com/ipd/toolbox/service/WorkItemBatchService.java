@@ -46,6 +46,11 @@ public class WorkItemBatchService {
     private final IterationService iterationService;
     private final com.ipd.toolbox.mapper.WorkItemMapper workItemMapper;
 
+    /**
+     * 批量服务依赖注入。
+     * 复用 workItemService/iterationService 的现有守卫与审计口径；
+     * workItemMapper 仅用于父项查找（通过 parentCode）。
+     */
     public WorkItemBatchService(WorkItemService workItemService, IterationService iterationService,
                                 com.ipd.toolbox.mapper.WorkItemMapper workItemMapper) {
         this.workItemService = workItemService;
@@ -103,6 +108,20 @@ public class WorkItemBatchService {
         return out;
     }
 
+    /**
+     * 执行批量动作（流转/更新/进入迭代）。
+     *
+     * <p>核心原则：按 id 逐条执行，单条失败不影响其他条目。
+     * 支持 dryRun 模式做预检：
+     * 1) TRANSITION: 调用 preflight 触发状态机守卫校验，但不落库；
+     * 2) UPDATE: 只在非 dryRun 下执行实际字段更新；
+     * 3) ASSIGN_ITERATION: 根据模式区分预检/提交。
+     * 每条结果返回成功与否及明细，便于前端展示“局部成功、局部失败”。</p>
+     *
+     * @param req 批量请求，包含动作类型、目标对象与参数
+     * @return 每条记录的执行结果
+     * @throws BusinessException 当请求参数为空、动作不支持或必要参数缺失时抛出
+     */
     public List<BatchItemResult> execute(BatchRequest req) {
         if (req == null || req.ids() == null || req.ids().isEmpty()) {
             throw new BusinessException("批量操作对象不能为空");

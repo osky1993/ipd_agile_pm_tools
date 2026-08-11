@@ -18,14 +18,23 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 结项检查：项目流转 CLOSED 前的"未了事项"盘点（口径对齐 AlertService）。
- * 非强制拦截——单人工具守卫软化：计数写入审计与前端确认框，决定权留给人。
+ * 结项检查服务：项目流转 CLOSED 前的未了事项口径汇总。
+ * 非强制拦截，结果用于界面提示与人工确认。
  */
 @Service
 public class ClosureService {
 
     public record CloseoutCheck(long openRisks, long unreviewedGates, long openDefects,
                                 long pendingChanges, long unmetRedlines) {
+        /**
+         * 是否满足结项前置条件。
+         *
+         * 用途：
+         * 检查五类口径（风险、门禁、缺陷、变更、红线）是否全部归零。
+         *
+         * 返回：
+         * 全部为 0 时返回 true；任一口径有未清事项则返回 false。
+         */
         public boolean clean() {
             return openRisks == 0 && unreviewedGates == 0 && openDefects == 0
                     && pendingChanges == 0 && unmetRedlines == 0;
@@ -38,6 +47,11 @@ public class ClosureService {
     private final DecisionMapper decisionMapper;
     private final GateCriterionMapper criterionMapper;
 
+    /**
+     * 结项检查依赖注入。
+     * 覆盖风险、DCP、缺陷、变更、红线等五类口径来源，统一在 check() 返回摘要统计。
+     * 仅查询与计数，不在此处产生流转副作用，结果用于上层是否继续结项提示。
+     */
     public ClosureService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                           StageGateMapper stageGateMapper, DecisionMapper decisionMapper,
                           GateCriterionMapper criterionMapper) {
@@ -48,6 +62,17 @@ public class ClosureService {
         this.criterionMapper = criterionMapper;
     }
 
+    /**
+     * 生成结项前检查清单（只读）：
+     * <ul>
+     *   <li>统计五类未满足项：未闭合风险、未评审门禁、未关闭缺陷、未完成变更、未满足红线。</li>
+     *   <li>门禁采用 Decision 最新结论判断 PASS/CONDITIONAL。</li>
+     *   <li>无硬阻断副作用，只返回状态快照给上层决定。</li>
+     * </ul>
+     *
+     * @param projectId 项目 ID
+     * @return 结项检查计数结构体
+     */
     public CloseoutCheck check(Long projectId) {
         if (projectMapper.selectById(projectId) == null) {
             throw new BusinessException(4040, "项目不存在");

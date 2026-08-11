@@ -7,6 +7,12 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 基线记录实体。
+ *
+ * <p>用于记录评审或手工建立的基线快照（含来源、阶段门、决策关联）。
+ * 常用于冻结时点比对与回滚/复盘依据。
+ */
 @Data
 @TableName("baseline")
 public class Baseline {

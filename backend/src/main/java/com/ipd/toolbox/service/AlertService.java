@@ -44,6 +44,13 @@ public class AlertService {
     private final PerfMapper perfMapper;
     private final PerfService perfService;
 
+    /**
+     * 告警服务依赖注入。
+     * 告警口径跨越 WorkItem / Decision / StageGate / TraceLink / PERF，
+     * 所以依赖点按服务边界分别用于“规则计算 + 历史数据 + 追溯链”三部分拼接。
+     *
+     * <p>说明：该类属于纯计算层，未直接进行状态更新，所有副作用仅来自所依赖服务的读取行为。</p>
+     */
     public AlertService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                         DecisionMapper decisionMapper, GateCriterionMapper criterionMapper,
                         StageGateMapper stageGateMapper, TraceLinkMapper traceLinkMapper,
@@ -58,6 +65,23 @@ public class AlertService {
         this.perfService = perfService;
     }
 
+    /**
+     * 按项目汇总预警。
+     *
+     * <p>聚合 8 大类告警（风险超期、承诺临近、红线未满足、待审批变更、
+     * 已满足无证据、豁免到期、WIP 停滞、缺陷老化、DCP 即将到期、追溯链断裂），
+     * 并按严重度与到期日排序返回。</p>
+     * <p>返回语义：</p>
+     * <ul>
+     *   <li>按 `severity` 排序：HIGH(0) -> MED(1) -> LOW(2) -> 未识别 9。</li>
+     *   <li>同级别按到期日升序；`due == null` 放最后。</li>
+     *   <li>封闭项目（lifecycleStatus=CLOSED）直接返回空列表。</li>
+     * </ul>
+     * <p>边界：8类规则分别可能返回重复告警（例如同一对象被多个规则命中），当前实现不做跨规则去重。</p>
+     *
+     * @param projectId 项目 ID
+     * @return 告警列表，按严重度/到期日排序（仅失败时抛业务异常）
+     */
     public List<Alert> list(Long projectId) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
@@ -84,7 +108,14 @@ public class AlertService {
         return out;
     }
 
-    /** 超期风险（HIGH）。 */
+    /**
+     * 风险超期告警（HIGH）。
+     *
+     * <p>基于 PerfService.riskDueDate 计算截至日，
+     * 仅当 today 超过 dueDate 时发出，并附带当前敞口与等级说明。</p>
+     *
+     * <p>更新粒度：纯读；输出每条未关闭风险一条告警；已关闭/已接纳风险自动排除。</p>
+     */
     List<Alert> riskOverdue(Long projectId, LocalDate today) {
         List<Alert> out = new ArrayList<>();
         for (WorkItem r : workItemMapper.selectList(new QueryWrapper<WorkItem>()
@@ -107,7 +138,14 @@ public class AlertService {
         return out;
     }
 
-    /** 有条件通过承诺到期（每个 subject 只看最新决策；绑定风险已闭环则不告警）。 */
+    /**
+     * 承诺到期告警（CONDITIONAL 审批）。
+     *
+     * <p>对同一 subject 仅取最新决策；承诺已到期走 HIGH，
+     * 即将到期（14 天窗口）走 MED；若绑定风险已闭环则跳过。</p>
+     *
+     * <p>口径说明：`latest` 按 id 正序累积，后写覆盖先写，等价取 subject 最新决策。</p>
+     */
     List<Alert> commitmentDue(Long projectId, LocalDate today) {
         // 按 id 升序遍历，后写的覆盖先写的 → map 中留下每个 subject 的最新决策
         Map<String, Decision> latest = new LinkedHashMap<>();
@@ -141,7 +179,12 @@ public class AlertService {
         return out;
     }
 
-    /** 红线未满足（WAIVED 视为满足）。 */
+    /**
+     * 红线未满足告警（is_redline=1 且未 MET/WAIVED）。
+     * 红线被 WAIVED 的场景仍按满足处理，不纳入告警。
+     *
+     * <p>边界：只基于 `criterion.status` + `is_redline` 字段，不额外检查证据或关联上下文。</p>
+     */
     List<Alert> redlineUnmet(Long projectId) {
         List<Alert> out = new ArrayList<>();
         for (GateCriterion c : criterionMapper.selectList(new QueryWrapper<GateCriterion>()
@@ -154,7 +197,12 @@ public class AlertService {
         return out;
     }
 
-    /** 待审批变更。 */
+    /**
+     * 待审批变更告警。
+     * 命中 Impact Analysed 且尚未决策的变更，以 MED 提示给到项目看板。
+     *
+     * <p>边界：仅看 `status=Impact Analysed`，不检查关联附件、影响范围、优先级。</p>
+     */
     List<Alert> changePending(Long projectId) {
         List<Alert> out = new ArrayList<>();
         for (WorkItem c : workItemMapper.selectList(new QueryWrapper<WorkItem>()
@@ -167,7 +215,12 @@ public class AlertService {
         return out;
     }
 
-    /** MET 但无证据的条件。 */
+    /**
+     * 已满足但缺证据告警（MET_NO_EVIDENCE）。
+     * 通过 perfMapper 读取“状态已满足但证据链缺失”的 DCP 条目。
+     *
+     * <p>失败策略：若 perfMapper 查询异常，本方法抛异常终止整个告警聚合；当前实现无局部降级。</p>
+     */
     List<Alert> metNoEvidence(Long projectId) {
         List<Alert> out = new ArrayList<>();
         for (Map<String, Object> r : perfMapper.metWithoutEvidence(projectId)) {
@@ -179,7 +232,12 @@ public class AlertService {
         return out;
     }
 
-    /** 豁免到期（含已过期）。 */
+    /**
+     * 豁免到期告警。
+     * 仅检查 status=WAIVED 且 waiver_due 在窗口内（含过期）的对象。
+     *
+     * <p>窗口语义：`c.getWaiverDue()` 小于等于 `today + 14天` 时告警；包含过期与当日到期。</p>
+     */
     List<Alert> waiverDue(Long projectId, LocalDate today) {
         List<Alert> out = new ArrayList<>();
         for (GateCriterion c : criterionMapper.selectList(new QueryWrapper<GateCriterion>()
@@ -193,7 +251,12 @@ public class AlertService {
         return out;
     }
 
-    /** WIP 停滞（In Progress 超 7 天无状态变化）。 */
+    /**
+     * WIP 停滞告警（In Progress 超过 7 天无状态变化）。
+     * 通过 perfMapper.lastMoveOfOpenItems 计算最近一次状态变更时间窗口。
+     *
+     * <p>边界：`perfMapper.lastMoveOfOpenItems` 为空时跳过；`last_move` 异常解析失败时按 0 天处理。</p>
+     */
     List<Alert> wipStale(Long projectId, LocalDate today) {
         List<Alert> out = new ArrayList<>();
         for (Map<String, Object> r : perfMapper.lastMoveOfOpenItems(projectId)) {
@@ -212,7 +275,14 @@ public class AlertService {
         return out;
     }
 
-    /** DCP 计划评审日临近/已逾期且尚无 PASS/CONDITIONAL 决策。 */
+    /**
+     * DCP 即将到期/逾期告警。
+     * 若该 DCP 已有 PASS 或 CONDITIONAL 决策，不再重复提示；
+     * 在窗口内（14 天）为 MED，逾期为 HIGH。
+     *
+     * <p>更新粒度：对每个 stage_gate 最多一条结果；有 PASS/CONDITIONAL 最新结论则跳过。</p>
+     * <p>稳定性：计划日仅从 `plan_date` 读取，缺失项不参与该规则。</p>
+     */
     List<Alert> dcpApproaching(Long projectId, LocalDate today) {
         // 已有通过类结论的 gate 不再提醒（按 subject 取最新一条决策）
         Map<Long, Decision> latestByGate = new LinkedHashMap<>();
@@ -246,10 +316,18 @@ public class AlertService {
     }
 
     /**
-     * 追溯完整性（LOW，断链主动暴露而非等人查矩阵）：
-     * ① 非 Backlog 需求无 verifies 入链（无测试覆盖）
-     * ② 进行中及以后的需求既无 implements 入链也无 parent_of 子项（无分解/实现链）
-     * ③ 非 Backlog 能力无 parent_of 出链（未分解出需求）
+     * 追溯完整性告警（LOW）：
+     * 1) 非 Backlog 的需求无 verifies 入链；
+     * 2) 进行中及以后的需求既无 implements 入链也无 parent_of 子项；
+     * 3) 非 Backlog 能力无 parent_of 出链；
+     * 目的在于提前暴露断链问题而非等待人工排查矩阵。
+     *
+     * <p>更新口径说明：</p>
+     * <ul>
+     *   <li>先聚合项目范围内 `verifies/implements/parent_of` 链接集合。</li>
+     *   <li>对每个需求/能力分别按规则拼接低优先级告警。</li>
+     *   <li>同一对象可能产生多类告警，当前实现不去重。</li>
+     * </ul>
      */
     List<Alert> traceGaps(Long projectId) {
         Set<Long> verified = new HashSet<>();
@@ -291,7 +369,12 @@ public class AlertService {
         return out;
     }
 
-    /** 长期未关缺陷。 */
+    /**
+     * 长期未关缺陷告警。
+     * 超过 14 天仍未关闭的缺陷将触发 MED 告警，促进及时收口。
+     *
+     * <p>边界：以 `created_at` 到当前日期为年龄衡量；`created_at` 缺失时视为 0 天，不触发告警。</p>
+     */
     List<Alert> defectAging(Long projectId, LocalDate today) {
         List<Alert> out = new ArrayList<>();
         for (WorkItem d : workItemMapper.selectList(new QueryWrapper<WorkItem>()

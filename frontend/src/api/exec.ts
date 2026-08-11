@@ -1,5 +1,7 @@
 import http from './http'
 
+/** 执行层总览 API：汇总项目、告警、缺陷与改进态势。 */
+
 export interface ExecSummary {
   projectsActive: number
   projectsOnHold: number
@@ -81,5 +83,6 @@ export interface ExecOverview {
 }
 
 export const execApi = {
+  /** 拉取高层执行总览（领导驾驶舱）。 */
   overview: () => http.get<any, ExecOverview>('/exec/overview'),
 }

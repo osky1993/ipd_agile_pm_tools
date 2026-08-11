@@ -25,6 +25,10 @@ public class DecisionService {
     private final CodeGenerator codeGenerator;
     private final AuditService audit;
 
+    /**
+     * 决策服务依赖主表与项目/代码生成/审计组件注入，
+     * 其中项目用于决策号命名，审计用于写入可追溯记录。
+     */
     public DecisionService(DecisionMapper mapper, ProjectMapper projectMapper,
                            CodeGenerator codeGenerator, AuditService audit) {
         this.mapper = mapper;
@@ -33,12 +37,28 @@ public class DecisionService {
         this.audit = audit;
     }
 
+    /**
+     * 按项目读取历史决策流水（最新在前），用于决策列表页与变更追溯。
+     *
+     * <p>范围：仅按 `project_id` 过滤，按 `decided_at` 降序返回，默认展示完整决策链。</p>
+     * <p>纯读方法，不会重建修订关系，不产生审计副作用。</p>
+     */
     public List<Decision> list(Long projectId) {
         return mapper.selectList(new QueryWrapper<Decision>()
                 .eq("project_id", projectId).orderByDesc("decided_at"));
     }
 
-    /** 该 subject 的最新决策（修订链的 prev 候选），无则 null。 */
+    /**
+     * 获取某个 subject 的最新决策。
+     *
+     * <p>用途：作为 `record` 的 prevDecisionId 自动补齐来源，形成修订链。</p>
+     * <p>边界：subjectType/subjectId 为空直接返回 null，避免调用方传入不完整参数时抛异常。</p>
+     * <p>无副作用：仅执行单次 selectOne 查询，找不到返回 null。</p>
+     *
+     * @param subjectType 主题类型（例如 STAGE_GATE/WORK_ITEM）
+     * @param subjectId 主题 ID
+     * @return 指定 subject 最近决策；不存在返回 null
+     */
     public Decision latestFor(String subjectType, Long subjectId) {
         if (subjectType == null || subjectId == null) {
             return null;
@@ -48,7 +68,27 @@ public class DecisionService {
                 .orderByDesc("id").last("LIMIT 1"));
     }
 
-    /** 记录一条正式决策（只增）。 */
+    /**
+     * 记录一条正式决策（只增），并建立修订链。
+     *
+     * <p>更新粒度（先决条件 + 更新动作 + 约束）：</p>
+     * <ul>
+     *   <li>先决条件：`REVIEWER` 角色，项目存在，结论非空。</li>
+     *   <li>动作：
+     *     <ol>
+     *       <li>清空主键，确保插入新行而非更新。</li>
+     *       <li>当 `prevDecisionId` 为空时按 subjectType/subjectId 自动补齐最新决策，确保修订链可追溯。</li>
+     *       <li>生成 `DEC` 编码，填充决策人和决策时间后插入。</li>
+     *       <li>写 `DECISION` 审计。</li>
+     *     </ol>
+     *   </li>
+     * </ul>
+     * <p>幂等边界：本方法天然不幂等；重复提交会创建更多历史记录。若调用方需要幂等，请在上游按 subject + 业务标识去重。</p>
+     * <p>失败策略：事务内失败全部回滚，`prevDecisionId` 自动补齐与代码生成与插入失败均不会部分落库。</p>
+     *
+     * @param d 决策对象（结论与主题必填）
+     * @return 持久化后的决策
+     */
     @Transactional
     public Decision record(Decision d) {
         UserContext.requireRole("REVIEWER");

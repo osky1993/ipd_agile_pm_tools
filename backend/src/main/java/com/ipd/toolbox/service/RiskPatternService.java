@@ -18,9 +18,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 跨项目风险模式库（只读聚合）：全量历史风险（含 CLOSED 项目）看"哪类风险反复出现、
- * 平均处置多久、最终结局如何"。高频词用中文 bigram 词频（相邻双字计数，≥2 次才列）——
- * 不引分词库的务实做法，对个人风险库的召回已足够；点击词条即作关键词过滤。
+ * 跨项目风险模式库（只读聚合）：按风险口径输出状态分布、等级分布与文本关键词。
+ * 数据源覆盖历史 CLOSED 项目，便于趋势与模式对齐。
  */
 @Service
 public class RiskPatternService {
@@ -43,6 +42,10 @@ public class RiskPatternService {
     private final WorkItemMapper workItemMapper;
     private final WorkItemStatusLogMapper statusLogMapper;
 
+    /**
+     * 风险模式服务依赖注入。
+     * 需要 project/workItem/statusLog 三类数据完成全量风险抽样、状态流转闭环时长统计与项目码映射。
+     */
     public RiskPatternService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                               WorkItemStatusLogMapper statusLogMapper) {
         this.projectMapper = projectMapper;
@@ -50,6 +53,16 @@ public class RiskPatternService {
         this.statusLogMapper = statusLogMapper;
     }
 
+    /**
+     * 汇总风险模式数据（读模型）：
+     * <ol>
+     *   <li>聚合全量风险及项目映射表用于展示。</li>
+     *   <li>批量读取状态日志，按首流转到闭环状态计算处置时长。</li>
+     *   <li>交给 aggregate() 做统一过滤与统计。</li>
+     *   <li>若 keyword 非空，执行标题包含过滤。</li>
+     * </ol>
+     * <p>该方法不落库，仅供分析面板消费。</p>
+     */
     public Patterns patterns(String keyword) {
         Map<Long, String> codeByProject = new HashMap<>();
         for (Project p : projectMapper.selectList(null)) {
@@ -80,7 +93,15 @@ public class RiskPatternService {
         return aggregate(risks, codeByProject, resolveDays, keyword);
     }
 
-    /** 聚合纯函数（可测）：keyword 过滤 → 结局/等级/策略分布 + bigram 词频。 */
+    /**
+     * 聚合纯函数（静态、可复用）：
+     * <ul>
+     *   <li>按 keyword 过滤风险标题。</li>
+     *   <li>累计状态、等级、策略、处置天数与 bigram 词频。</li>
+     *   <li>输出 rows、closed/accepted/open 与平均处置时长。</li>
+     * </ul>
+     * <p>纯计算，不含数据库副作用。</p>
+     */
     static Patterns aggregate(List<WorkItem> risks, Map<Long, String> codeByProject,
                               Map<Long, Long> resolveDays, String keyword) {
         String kw = keyword == null ? "" : keyword.trim();
@@ -132,7 +153,14 @@ public class RiskPatternService {
                 avg, byLevel, byStrategy, topWords, rows);
     }
 
-    /** 中文 bigram：去掉非 CJK 字符后按相邻双字计数。 */
+    /**
+     * 中文 bigram 词频提取（只读）：
+     * <ul>
+     *   <li>仅保留 CJK 片段，按相邻两个字符计数。</li>
+     *   <li>只保留频次≥2 的词条作为 topWords 候选。</li>
+     * </ul>
+     * <p>该策略避免外部分词依赖，聚焦内部一致性和部署轻量。</p>
+     */
     static void countBigrams(String title, Map<String, Integer> freq) {
         if (title == null) {
             return;

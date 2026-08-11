@@ -45,10 +45,12 @@ public class TimeMachineService {
     public record Timeline(LocalDate start, LocalDate end, List<EventPoint> events) {
     }
 
+    /** 时间点重建条目：单个工作项在某日期的快照。*/
     public record AsOfItem(Long id, String code, String type, String title,
                            String statusAtDate, boolean deletedNow) {
     }
 
+    /** 当日事件列表中的最小节点（创建/流转/决策/基线/证据）。*/
     public record DayEvent(String kind, String text) {
     }
 
@@ -72,8 +74,11 @@ public class TimeMachineService {
                              String kind /* NEW | COMPLETED | CHANGED | UNCHANGED */) {
     }
 
+    /** asOf 和 compare 共用的 KPI 口径。*/
     public record Kpis(int reqTotal, int reqAccepted, int defectsOpen, int wip, int risksOpen) {
     }
+
+    /** A/B 对比结果，rows 字段仅保留状态发生变化的工作项。*/
 
     public record Compare(LocalDate from, LocalDate to, Kpis kpisFrom, Kpis kpisTo,
                           int added, int completed, int changed, int unchanged,
@@ -81,7 +86,17 @@ public class TimeMachineService {
                           List<DayEvent> periodEvents) {
     }
 
-    /** A→B 期间发生了什么：两次回放 diff + 期间决策/基线/流转统计。 */
+    /**
+     * A→B 期间复盘。
+     *
+     * <p>先对 {@code from}/{@code to} 做时序校正（若 from 在后则交换），
+     * 再通过回放得到两时点状态并做变更归类，最后统计区间流转次数与大事事件。</p>
+     *
+     * @param projectId 项目 ID
+     * @param from 起始日期（闭区间）
+     * @param to 结束日期（闭区间）
+     * @return A/B 对比结果
+     */
     public Compare compare(Long projectId, LocalDate from, LocalDate to) {
         requireProject(projectId);
         if (from.isAfter(to)) {
@@ -161,7 +176,18 @@ public class TimeMachineService {
                 added, completed, changed, unchanged, transitionCount, rows, periodEvents);
     }
 
-    /** 时点 KPI 汇总（asOf 与 compare 共用口径）。 */
+    /**
+     * 时点 KPI 汇总（asOf 与 compare 共用口径）。
+     *
+     * <p>按工作项类型计数：
+     * 需求统计总量与 Accepted；
+     * 缺陷与风险仅统计未闭环项；
+     * WIP 使用 {@link #WIP_STATUSES} 判定。</p>
+     *
+     * @param items 所有工作项
+     * @param statusAt itemId 到状态映射
+     * @return KPI 汇总对象
+     */
     static Kpis kpis(List<WorkItem> items, Map<Long, String> statusAt) {
         int reqTotal = 0;
         int reqAccepted = 0;
@@ -207,6 +233,12 @@ public class TimeMachineService {
     private final IterationMapper iterationMapper;
     private final EvidenceMapper evidenceMapper;
 
+    /**
+     * 时光机服务在实例化时注入全部回放必需依赖：
+     * - 项目与工作项仓储（决定口径与过滤范围）
+     * - 状态日志仓储（用于按时间回放）
+     * - 决策/基线/迭代/证据仓储（用于构建事件与 KPI）。
+     */
     public TimeMachineService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                               WorkItemStatusLogMapper statusLogMapper, DecisionMapper decisionMapper,
                               BaselineMapper baselineMapper, IterationMapper iterationMapper,
@@ -220,7 +252,15 @@ public class TimeMachineService {
         this.evidenceMapper = evidenceMapper;
     }
 
-    /** 事件轨道：项目全程范围 + 决策/基线/迭代起止标记（滑杆可点击跳转）。 */
+    /**
+     * 构建项目时间轴事件轨道。
+     *
+     * <p>返回决策、基线、迭代起止时间点的聚合结果，并按时间升序输出；
+     * 起始边界取项目创建日与最早事件之间更早者，便于前端滑杆显示。</p>
+     *
+     * @param projectId 项目 ID
+     * @return 时间轴事件集合
+     */
     public Timeline timeline(Long projectId) {
         Project project = requireProject(projectId);
         List<EventPoint> events = new ArrayList<>();
@@ -256,7 +296,16 @@ public class TimeMachineService {
         return new Timeline(start, LocalDate.now(), events);
     }
 
-    /** 时点重建：回放状态日志得到 date 当天收盘时的项目状态。 */
+    /**
+     * 时点重建：回放状态日志得到 date 当天收盘时的项目状态。
+     *
+     * <p>包含：类型×状态分布、明细条目、风险计数与累计决策/证据数；
+     * 同时附带 {@link #dayEvents(Long, LocalDate, List, List)} 提供同日事件流。</p>
+     *
+     * @param projectId 项目 ID
+     * @param date 截止日期
+     * @return 指定日期的项目快照
+     */
     public AsOf asOf(Long projectId, LocalDate date) {
         requireProject(projectId);
         List<WorkItem> allItems = workItemMapper.selectAllIncludingDeleted(projectId);
@@ -317,8 +366,15 @@ public class TimeMachineService {
     }
 
     /**
-     * 回放纯函数：id → date 当天收盘状态；date 时点尚未创建的项不在结果中。
-     * 状态 = 截至当天最后一条流转的 to_status；无流转则取状态机初始状态。
+     * 回放纯函数：id → date 当天收盘状态。
+     *
+     * <p>对不存在于目标时点的项返回空（创建晚于当日）；有流转日志时取截至 endOfDay 的最新 {@code to_status}，
+     * 无日志时使用状态机初始状态。</p>
+     *
+     * @param items 所有工作项（含逻辑删除）
+     * @param logs 状态日志，按 id 升序
+     * @param date 截止日期
+     * @return workItemId -> 状态映射
      */
     static Map<Long, String> replay(List<WorkItem> items, List<WorkItemStatusLog> logs, LocalDate date) {
         LocalDateTime endOfDay = date.plusDays(1).atStartOfDay();
@@ -339,7 +395,17 @@ public class TimeMachineService {
         return statusAt;
     }
 
-    /** 当日事件流：流转/决策/基线/证据。 */
+    /**
+     * 汇总某一日期的事件流。
+     *
+     * <p>事件源包括创建、状态流转、决策、基线、证据上传，返回按扫描顺序追加的文本事件列表。</p>
+     *
+     * @param projectId 项目 ID
+     * @param date 目标日期
+     * @param allItems 项目下全部工作项
+     * @param logs 全量状态日志
+     * @return 当日事件列表
+     */
     private List<DayEvent> dayEvents(Long projectId, LocalDate date,
                                      List<WorkItem> allItems, List<WorkItemStatusLog> logs) {
         Map<Long, WorkItem> byId = new HashMap<>();
@@ -386,6 +452,13 @@ public class TimeMachineService {
         return out;
     }
 
+    /**
+     * 项目查找兜底，确保时光机所有分析都基于有效项目。
+     *
+     * @param projectId 项目 ID
+     * @return 项目实体
+     * @throws BusinessException 4040 项目不存在
+     */
     private Project requireProject(Long projectId) {
         Project p = projectMapper.selectById(projectId);
         if (p == null) {

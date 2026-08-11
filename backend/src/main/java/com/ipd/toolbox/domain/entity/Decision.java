@@ -8,6 +8,12 @@ import lombok.Data;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * 决策记录实体。
+ *
+ * <p>记录对某一业务对象（需求/缺陷/风险等）形成的正式结论。
+ * 可用于留痕是否批准、驳回、转交或临时放行，并支持指向上游版本与时间承诺。
+ */
 @Data
 @TableName("decision")
 public class Decision {

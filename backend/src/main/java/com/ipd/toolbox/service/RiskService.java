@@ -11,10 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 
 /**
- * 风险深化：概率×影响定性评估（ext_fields 键 probability/impact/strategy）与风险任务化。
- * 敞口 exposure = p×i 读时计算不落库（避免双写不一致）；等级 高≥15 / 中≥8 / 低。
- * 任务化建链用 TASK -affects→ RISK：不扩 mitigates 关系——关系枚举散布在 V1 注释/docs/
- * MCP 描述/labels 四处，而 (TASK, affects, RISK) 三元组全站唯一，可精确识别应对任务。
+ * 风险深化服务：风险敞口计算、等级映射、风险任务化。
+ * <p>约束：exposure 在读取口径计算，不落库；坏数据解析优先降级为空值以保证流程连续性。</p>
  */
 @Service
 public class RiskService {
@@ -23,7 +21,7 @@ public class RiskService {
                           Integer probability, Integer impact, String strategy) {
     }
 
-    /** 静态便捷解析用（只读原始类型，无需注入配置过的 ObjectMapper） */
+    /** 静态便捷解析用（只读原始类型，无需注入配置过的 ObjectMapper）。 */
     private static final ObjectMapper PLAIN_OM = new ObjectMapper();
 
     static RiskExt parseExt(String extJson) {
@@ -36,6 +34,12 @@ public class RiskService {
     private final AuditService audit;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 风险服务依赖注入。
+     * WorkItemService 负责风险对象的 CRUD 与状态校验，
+     * TraceLinkService 负责链路创建，
+     * traceLinkMapper + audit 提供持久化存在性与审计留痕。
+     */
     public RiskService(WorkItemService workItemService, TraceLinkService traceLinkService,
                        com.ipd.toolbox.mapper.TraceLinkMapper traceLinkMapper,
                        AuditService audit, ObjectMapper objectMapper) {
@@ -46,7 +50,13 @@ public class RiskService {
         this.objectMapper = objectMapper;
     }
 
-    /** 容错读 ext（坏 JSON/缺键/字符串数字均不抛错）。 */
+    /**
+     * 读取扩展字段并将 probability/impact/mitigation 转为领域对象（只读）：
+     * <ul>
+     *   <li>缺失或空 JSON 返回默认空对象，避免主流程异常中断。</li>
+     *   <li>解析失败降级为空对象，保留容错边界。</li>
+     * </ul>
+     */
     static RiskExt parseExt(String extJson, ObjectMapper om) {
         if (extJson == null || extJson.isBlank()) {
             return new RiskExt(null, null, null, null, null);
@@ -64,6 +74,10 @@ public class RiskService {
         }
     }
 
+    /**
+     * 计算敞口（只读）：probability × impact。
+     * 任一输入缺失返回 null；该值不落库，按读取口径派生，避免主数据冗余。
+     */
     static Integer exposure(RiskExt e) {
         if (e.probability() == null || e.impact() == null) {
             return null;
@@ -71,7 +85,15 @@ public class RiskService {
         return e.probability() * e.impact();
     }
 
-    /** HIGH ≥15 / MED ≥8 / LOW；未评估返回 null。 */
+    /**
+     * 按敞口阈值映射等级（只读）：
+     * <ul>
+     * <li>HIGH: exposure ≥ 15</li>
+     * <li>MED: exposure ≥ 8</li>
+     * <li>LOW: 其他已评估场景</li>
+     * <li>null：缺少评估输入</li>
+     * </ul>
+     */
     static String exposureLevel(Integer exposure) {
         if (exposure == null) {
             return null;
@@ -79,7 +101,21 @@ public class RiskService {
         return exposure >= 15 ? "HIGH" : exposure >= 8 ? "MED" : "LOW";
     }
 
-    /** 风险任务化：按处置措施生成应对 TASK 并建 TASK -affects→ RISK 追溯链（防重）。 */
+    /**
+     * 从风险生成应对任务（写链路）：
+     * <ol>
+     *   <li>校验目标是 RISK 类型。</li>
+     *   <li>解析 ext_fields 确认 mitigation 已填写，未填写直接失败。</li>
+     *   <li>防重：已存在 TARGET=RISK 的 affects 关系时拒绝重复创建。</li>
+     *   <li>创建 TASK 并建立 TASK -affects→ RISK 关系。</li>
+     *   <li>写入风险 UPDATE 审计。</li>
+     * </ol>
+     * <p>更新粒度：新增任务与单条追溯关系，不会修改原风险主记录内容。</p>
+     * <p>失败策略：任何异常会阻断任务化，避免生成孤儿任务。</p>
+     *
+     * @param riskId 风险工作项 ID
+     * @return 新建的 TASK 实体
+     */
     @Transactional
     public WorkItem createMitigationTask(Long riskId) {
         WorkItem risk = workItemService.get(riskId);
@@ -122,11 +158,17 @@ public class RiskService {
         return created;
     }
 
+    /**
+     * 读取 JSON 文本值（只读）：空字符串返回 null，避免空值污染文本语义。
+     */
     private static String textOrNull(JsonNode n, String key) {
         JsonNode v = n.path(key);
         return v.isTextual() && !v.asText().isBlank() ? v.asText() : null;
     }
 
+    /**
+     * 解析 int（只读）：允许 int/数字字符串，非法格式返回 null。
+     */
     private static Integer intOrNull(JsonNode n, String key) {
         JsonNode v = n.path(key);
         if (v.isInt()) {
@@ -142,6 +184,9 @@ public class RiskService {
         return null;
     }
 
+    /**
+     * 解析 ISO 日期（只读）：非法格式返回 null。
+     */
     private static LocalDate dateOrNull(JsonNode n, String key) {
         JsonNode v = n.path(key);
         if (!v.isTextual() || v.asText().isBlank()) {

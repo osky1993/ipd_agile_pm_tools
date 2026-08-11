@@ -7,6 +7,12 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 工作项状态流转日志。
+ *
+ * <p>记录状态变迁的来源、去向、操作者与原因文本，
+ * 为状态机事件追踪、异常复盘和审计抽样提供事实记录。
+ */
 @Data
 @TableName("work_item_status_log")
 public class WorkItemStatusLog {

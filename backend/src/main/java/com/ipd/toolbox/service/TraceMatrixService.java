@@ -26,6 +26,12 @@ public class TraceMatrixService {
     private final TestCaseMapper testCaseMapper;
     private final TestRunMapper testRunMapper;
 
+    /**
+     * 注入追溯矩阵所需仓储。矩阵仅按数据库事实组装：
+     * - 需求池（WORK_ITEM + type=REQUIREMENT）
+     * - 反向 verifies 链
+     * - 每个用例的最近一次执行结果
+     */
     public TraceMatrixService(WorkItemMapper workItemMapper, TraceLinkMapper traceLinkMapper,
                               TestCaseMapper testCaseMapper, TestRunMapper testRunMapper) {
         this.workItemMapper = workItemMapper;
@@ -34,12 +40,37 @@ public class TraceMatrixService {
         this.testRunMapper = testRunMapper;
     }
 
+    /**
+     * 覆盖单元：每条关联用例在矩阵中的展示行。
+     * `latestResult` 为该用例在当前项目内最新一次执行结果。
+     */
     public record Cell(String testCode, String testTitle, String latestResult) {
     }
 
+    /**
+     * 一行需求覆盖信息。
+     * `covered` 表示是否存在至少一条测试用例 verifies 该需求。
+     */
     public record Row(Long requirementId, String code, String title, String status, boolean covered, List<Cell> tests) {
     }
 
+    /**
+     * 生成需求-用例追溯矩阵。
+     *
+     * <p>更新/聚合口径：
+     * <ul>
+     *   <li>范围：仅扫描 {@code type=REQUIREMENT} 且属于当前项目的工作项。</li>
+     *   <li>覆盖关系：只使用 `TEST_CASE -verifies-> WORK_ITEM` 关系；
+     *       若需求未命中任何关系，返回 {@code covered=false}。</li>
+     *   <li>执行结果：每个用例只取最新一次执行（`run_at` + `id` 降序）作为展示值；无执行则返回 null。</li>
+     *   <li>副作用：纯读方法，不写数据库，不产生审计。</li>
+     * </ul>
+     * <p>边界与失败策略：`latestResult` 为空时表示“尚未执行”，不因单条 trace 数据缺失中断整次矩阵计算；不存在的用例引用会被跳过。</p>
+     * 该方法用于“测试覆盖率看板”和“需求追溯卡片”，输出顺序保持 `需求ID` 升序，方便前端增量比对。
+     *
+     * @param projectId 项目 ID
+     * @return 按需求维度聚合的追溯矩阵行
+     */
     public List<Row> matrix(Long projectId) {
         List<WorkItem> reqs = workItemMapper.selectList(new QueryWrapper<WorkItem>()
                 .eq("project_id", projectId).eq("type", WorkItemType.REQUIREMENT.name()).orderByAsc("id"));

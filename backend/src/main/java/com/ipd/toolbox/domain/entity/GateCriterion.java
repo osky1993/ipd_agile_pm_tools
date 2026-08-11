@@ -6,6 +6,12 @@ import lombok.Data;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * 阶段门准入标准实体。
+ *
+ * <p>用于定义某阶段门的判定项（判定类型、证据要求、验收责任人、豁免信息等），
+ * 并支持红线标识、是否 readiness 条目、以及到期与审阅结论。
+ */
 @Data
 @TableName("gate_criterion")
 public class GateCriterion {

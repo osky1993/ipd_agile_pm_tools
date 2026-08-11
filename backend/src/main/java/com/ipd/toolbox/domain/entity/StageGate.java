@@ -6,6 +6,12 @@ import lombok.Data;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * 阶段门实体。
+ *
+ * <p>描述项目流程中的阶段、门与计划/预估时间，
+ * 与 gate criterion/decision 等记录联动，支撑阶段门评审与流程治理。
+ */
 @Data
 @TableName("stage_gate")
 public class StageGate {

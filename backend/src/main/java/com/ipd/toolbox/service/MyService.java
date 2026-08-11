@@ -24,8 +24,10 @@ import java.util.Set;
 public class MyService {
 
     static final int ITERATION_ENDING_DAYS = 7;
+    /** 进行中状态集合：用于“我的一天”中的“进行中”列表构建。 */
     private static final Set<String> DOING_STATUSES =
             Set.of("In Progress", "Analysing", "Fixing", "Mitigating");
+    /** 终态集合：用于超期统计时排除已结束项。 */
     private static final Set<String> TERMINAL_STATUSES = Set.of("Accepted", "Closed");
     /** 进「我的一天」项目级预警的类型（个人视角最需要主动看到的少数几类） */
     private static final Set<String> ALERT_TYPES =
@@ -49,6 +51,11 @@ public class MyService {
     private final AlertService alertService;
     private final PerfService perfService;
 
+    /**
+     * 我的工作台服务依赖注入。
+     * 汇总层跨 project、work item、iteration，最终输出前端“我的一天”所需条目；
+     * alert/perf 分别提供项目级告警与风险 dueDate 口径。
+     */
     public MyService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                      IterationMapper iterationMapper, AlertService alertService,
                      PerfService perfService) {
@@ -59,6 +66,24 @@ public class MyService {
         this.perfService = perfService;
     }
 
+    /**
+     * 汇总“我的一天”视图：
+     * - inProgress：本人当前进行中项
+     * - overdue：本人超期项（按截止日升序）
+     * - retest：本人待复测缺陷
+     * - endingSoon：本人参与的近 7 天迭代
+     * - projectAlerts：项目级高优先预警（HIGH + 指定类型）
+     *
+     * <p>更新粒度与边界：
+     * <ul>
+     *   <li>仅聚合非关闭项目；个人视图跨项目汇总。</li>
+     *   <li>inProgress 依据 `DOING_STATUSES` 判定；retest 仅 `DEFECT + Retesting`。</li>
+     *   <li>overdue 使用风险 dueDate（Risk）与 forecastDate（其他类型）统一为 `due`；过期则入列表。</li>
+     *   <li>endingSoon 从参与者的 ACTIVE 迭代中过滤，按结束日期升序返回。</li>
+     *   <li>projectAlerts 取项目告警中 HIGH + 白名单类型（DCP/承诺/豁免）。</li>
+     * </ul>
+     * <p>无持久化副作用。</p>
+     */
     public Today today(Long uid) {
         LocalDate today = LocalDate.now();
         List<Project> projects = projectMapper.selectList(new QueryWrapper<Project>()
@@ -94,6 +119,7 @@ public class MyService {
 
     private void collectMine(Project p, Long uid, LocalDate today, Map<Long, String> codeByProject,
                              List<MyItem> inProgress, List<MyItem> overdue, List<MyItem> retest) {
+        // 注意：该查询只排除终态，状态枚举新增时需要同步 `TERMINAL_STATUSES` 与 DOING_STATUSES。
         List<WorkItem> mine = workItemMapper.selectList(new QueryWrapper<WorkItem>()
                 .eq("project_id", p.getId()).eq("owner_id", uid)
                 .notIn("status", TERMINAL_STATUSES));
@@ -113,6 +139,13 @@ public class MyService {
         }
     }
 
+    /**
+     * 收集本人相关且即将截止的迭代。  
+     * 返回结果用于首页“迭代冲刺预警”区块。
+     *
+     * <p>更新边界：只扫该项目 ACTIVE 并有 end_date 的迭代；提前窗口为 7 天（`ITERATION_ENDING_DAYS`）。</p>
+     * <p>返回值按结束日期升序排序，以便前端卡片直接按时间展示。</p>
+     */
     private void collectIterations(Project p, Long uid, LocalDate today,
                                    Map<Long, String> codeByProject, List<IterationEnding> out) {
         List<Iteration> active = iterationMapper.selectList(new QueryWrapper<Iteration>()
@@ -130,6 +163,11 @@ public class MyService {
         }
     }
 
+    /**
+     * 将 WorkItem 映射为页面展示记录，避免服务层直接泄漏持久化实体差异。
+     *
+     * <p>映射策略：仅复制 UI 需要字段，不注入任何派生字段（e.g. riskLevel）。</p>
+     */
     private MyItem toItem(WorkItem w, String projectCode, LocalDate due) {
         return new MyItem(w.getId(), w.getCode(), w.getType(), w.getTitle(), w.getStatus(),
                 projectCode, w.getPriority(), due);

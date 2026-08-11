@@ -7,6 +7,12 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+/**
+ * 追踪关联实体。
+ *
+ * <p>建立任意两类对象间的关系边（如需求-用例、缺陷-工作项）。
+ * 通过 source/target type 与 id 组合构成可追溯图，支撑覆盖率和影响分析。
+ */
 @Data
 @TableName("trace_link")
 public class TraceLink {

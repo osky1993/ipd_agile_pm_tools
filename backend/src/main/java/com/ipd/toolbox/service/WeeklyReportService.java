@@ -47,6 +47,9 @@ public class WeeklyReportService {
     private final DecisionMapper decisionMapper;
     private final EvidenceMapper evidenceMapper;
 
+    /**
+     * 周报服务依赖注入：项目、工作项、流转日志、决策和证据来源。
+     */
     public WeeklyReportService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                                WorkItemStatusLogMapper statusLogMapper,
                                DecisionMapper decisionMapper, EvidenceMapper evidenceMapper) {
@@ -57,6 +60,13 @@ public class WeeklyReportService {
         this.evidenceMapper = evidenceMapper;
     }
 
+    /**
+     * 生成项目周报 Summary。
+     * 统计窗口默认 1~90 天，返回区间内创建/流转/决策/证据明细，按时间倒序。
+     *
+     * @param projectId 项目 ID
+     * @param days 查询回溯天数（会钳制为 1~90）
+     */
     public Summary summary(Long projectId, int days) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {

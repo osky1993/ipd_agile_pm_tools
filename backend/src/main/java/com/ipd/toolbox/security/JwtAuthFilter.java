@@ -24,6 +24,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         this.jwtService = jwtService;
     }
 
+    /**
+     * 每次请求执行一次：
+     * 1) 读取 Authorization Header
+     * 2) 解析成功则写入 UserContext
+     * 3) 最终清理 ThreadLocal，避免线程复用带来的越权泄漏
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

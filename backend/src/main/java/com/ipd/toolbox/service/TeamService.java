@@ -33,6 +33,15 @@ public class TeamService {
             "CHANGE", Set.of("Verified", "Rejected"),
             "RISK", Set.of("Closed", "Accepted"));
 
+    /**
+     * 判定工作项是否完成态。
+     *
+     * <p>不同类型使用不同终态集合（例如 DEFECT 以 Closed、CHANGE 以 Verified/Rejected）；
+     * 未显式配置类型默认以 Accepted 判定，避免历史未配置类型误判为未完成。</p>
+     *
+     * @param w 工作项
+     * @return true 表示已完成/可视作已落地
+     */
     static boolean isDone(WorkItem w) {
         return DONE_STATES.getOrDefault(w.getType(), Set.of("Accepted")).contains(w.getStatus());
     }
@@ -97,6 +106,10 @@ public class TeamService {
     private final PerfMapper perfMapper;
     private final TeamMapper teamMapper;
 
+    /**
+     * 团队看板需要项目、工作项、追溯、迭代、承诺、用户、性能和团队仓储：
+     * 其中 perf/tm 仓储用于状态变更时效与指标补充，保证阻塞与图谱口径一致。
+     */
     public TeamService(ProjectMapper projectMapper, WorkItemMapper workItemMapper,
                        TraceLinkMapper traceLinkMapper, IterationMapper iterationMapper,
                        IterationCommitmentMapper commitmentMapper, SysUserMapper sysUserMapper,
@@ -111,6 +124,15 @@ public class TeamService {
         this.teamMapper = teamMapper;
     }
 
+    /**
+     * 组装团队协作看板的总览数据。
+     * 聚合口径：
+     * 1) 当前项目所有工作项与追溯边；
+     * 2) 活跃迭代与承诺列表；
+     * 3) 阻塞检测结果（依赖、停滞、验证风险）；
+     * 4) 依赖图、交接提醒、责任人工作负载。
+     * 输出对象与前端直接对齐，不做二次计算，便于问题定位与演练复核。
+     */
     public Overview overview(Long projectId) {
         Project project = projectMapper.selectById(projectId);
         if (project == null) {
@@ -169,6 +191,12 @@ public class TeamService {
     }
 
     // ---------- 纯函数：依赖对归一化 ----------
+    /**
+     * 标准化依赖关系。
+     * 仅保留工作项级别链接，并将不同关系统一转为“前置→后继”方向：
+     * - depends_on：A depends_on B -> B -> A
+     * - blocks：A blocks B -> A -> B
+     */
     static List<DepPair> toDepPairs(List<TraceLink> links, Set<Long> validItemIds) {
         List<DepPair> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -193,6 +221,12 @@ public class TeamService {
     }
 
     // ---------- 纯函数：阻塞规则引擎 ----------
+    /**
+     * 阻塞规则引擎（纯内存）：
+     * - 先计算 unblockable 依赖、验证失败、缺陷拖拽、变更阻塞；
+     * - 再计算依赖环与迭代进度风险；
+     * - 最后按 severity/rule 排序稳定输出，便于 UI 显示。
+     */
     static List<Blocker> evaluateBlockers(Map<Long, WorkItem> items, List<DepPair> deps,
                                           Map<Long, LocalDateTime> lastMove, Map<Long, VerifyStat> verify,
                                           List<TraceLink> links, Long activeSprintId,
@@ -342,6 +376,7 @@ public class TeamService {
         return list;
     }
 
+    /** 去重辅助：同一阻塞规则+对象仅保留首次入库的提醒。 */
     private static void put(Map<String, Blocker> out, Blocker b) {
         out.putIfAbsent(b.rule() + ":" + b.itemId(), b);
     }
@@ -397,6 +432,12 @@ public class TeamService {
     }
 
     // ---------- 纯函数：依赖图 ----------
+    /**
+     * 依赖图构建：
+     * - 节点默认覆盖未完成项和活跃迭代承诺；
+     * - 再扩展一跳上下游并附带边类型（依赖/父子/affects/changes）；
+     * - 达到上限后按“关键链优先、承诺优先、时效优先”裁剪，返回 truncated 标志给前端给出降采样提示。
+     */
     static DependencyGraph buildGraph(Map<Long, WorkItem> items, List<TraceLink> links,
                                       List<DepPair> deps, Map<Long, VerifyStat> verify,
                                       Set<Long> blockedIds, Long activeSprintId,
@@ -489,6 +530,11 @@ public class TeamService {
     }
 
     // ---------- 纯函数：交接台 ----------
+    /**
+     * 派生交接列表：
+     * 基于状态流转轨迹 + 依赖关系 + 变更波及关系推导建议动作，
+     * 例如“可开始验证”“变更已批准可实施”“复测待确认”“依赖解锁后可开工”。
+     */
     static List<Handoff> deriveHandoffs(List<Map<String, Object>> transitions,
                                         Map<Long, WorkItem> items, List<DepPair> deps,
                                         List<TraceLink> links) {
@@ -555,6 +601,7 @@ public class TeamService {
         return out.size() > 20 ? out.subList(0, 20) : out;
     }
 
+    /** 交接事件去重：以 kind+item+downstreamId 维持唯一提示，避免重复干扰看板。 */
     private static void add(List<Handoff> out, Set<String> seen, Handoff h) {
         if (seen.add(h.kind() + ":" + h.itemId() + ":" + h.downstreamId())) {
             out.add(h);
@@ -562,6 +609,10 @@ public class TeamService {
     }
 
     // ---------- SprintPulse / OwnerLoad ----------
+    /**
+     * 迭代脉搏：基于承诺与状态快照计算承诺量/完成量/工时进度，
+     * 并返回可用于“时间风险”判断的已完成占比与状态柱状分布。
+     */
     static SprintPulse buildPulse(Iteration it, List<IterationCommitment> commits,
                                   Map<Long, WorkItem> items, LocalDate today) {
         LocalDate start = it.getStartDate();
@@ -602,6 +653,11 @@ public class TeamService {
                 committedPoints, donePoints, donePct, columns);
     }
 
+    /**
+     * 责任人看板：
+     * 只聚焦活跃需求/故事/任务（Ready/进行中/验证），
+     * 计算人均待办、卡点时长与是否被阻塞。
+     */
     static List<OwnerLoad> buildOwners(Map<Long, WorkItem> items, Map<Long, String> userNames,
                                        Set<Long> blockedIds, Map<Long, LocalDateTime> lastMove,
                                        LocalDate today) {
@@ -637,6 +693,7 @@ public class TeamService {
         return out;
     }
 
+    /** 将查询返回值安全转 long，null 按 0 处理。 */
     private static long num(Object o) {
         return o == null ? 0 : ((Number) o).longValue();
     }

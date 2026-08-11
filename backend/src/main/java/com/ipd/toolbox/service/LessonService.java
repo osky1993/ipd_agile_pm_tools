@@ -43,6 +43,15 @@ public class LessonService {
         return mapper.selectList(qw);
     }
 
+    /**
+     * 创建经验教训条目。
+     *
+     * <p>校验字段完整性与枚举类别后落库，并补齐创建人、创建时间与逻辑删除标识；
+     * 成功后写入审计事件，便于知识资产变更追溯。</p>
+     *
+     * @param l 待创建条目
+     * @return 持久化后的实体（含 code/id）
+     */
     @Transactional
     public Lesson create(Lesson l) {
         if (l.getTitle() == null || l.getTitle().isBlank()) {
@@ -64,6 +73,12 @@ public class LessonService {
         return l;
     }
 
+    /**
+     * 删除经验教训条目（硬删）。
+     * 先读后删，避免静默失败并保留审计链路完整性。
+     *
+     * @param id 经验教训 ID
+     */
     @Transactional
     public void delete(Long id) {
         Lesson l = mapper.selectById(id);

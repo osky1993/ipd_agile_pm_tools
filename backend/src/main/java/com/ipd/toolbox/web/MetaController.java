@@ -13,6 +13,10 @@ import java.util.*;
 /** 前端下拉/表单所需的元数据：工作项类型、追溯关系、各类型状态集合、用户清单。 */
 @RestController
 @RequestMapping("/api/meta")
+/**
+ * 元数据控制器：提供前端静态下拉与字段约束的动态字典。
+ * 包括用户、工作项类型、追溯关系、状态枚举集合。
+ */
 public class MetaController {
 
     private final com.ipd.toolbox.mapper.SysUserMapper userMapper;
@@ -34,6 +38,7 @@ public class MetaController {
         return Result.ok(list);
     }
 
+    /** 获取工作项类型枚举（值、缩写、展示名）。 */
     @GetMapping("/work-item-types")
     public Result<List<Map<String, String>>> workItemTypes() {
         List<Map<String, String>> list = new ArrayList<>();
@@ -43,11 +48,13 @@ public class MetaController {
         return Result.ok(list);
     }
 
+    /** 获取追溯关系枚举（例如 affects、implements、verifies）。 */
     @GetMapping("/trace-relations")
     public Result<Set<String>> traceRelations() {
         return Result.ok(TraceLinkService.RELATIONS);
     }
 
+    /** 按工作项类型返回可用状态集合，用于动态表单和状态下拉。 */
     @GetMapping("/statuses")
     public Result<Map<String, Set<String>>> statuses() {
         Map<String, Set<String>> map = new LinkedHashMap<>();

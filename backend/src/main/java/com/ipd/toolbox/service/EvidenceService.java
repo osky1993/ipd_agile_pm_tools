@@ -37,6 +37,11 @@ public class EvidenceService {
     private final TraceLinkService traceLinkService;
     private final String root;
 
+    /**
+     * 证据服务依赖注入。
+     * 证据元数据落库到 mapper，项目元数据用于编码前校验，
+     * codeGenerator 负责 EV 编码，audit 负责 EVIDENCE 创建留痕，traceLinkService 负责追溯挂链。
+     */
     public EvidenceService(EvidenceMapper mapper, ProjectMapper projectMapper, CodeGenerator codeGenerator,
                            AuditService audit, TraceLinkService traceLinkService,
                            @Value("${ipd.evidence.root}") String root) {
@@ -48,7 +53,16 @@ public class EvidenceService {
         this.root = root;
     }
 
-    /** 默认只列正式证据；category=ATTACHMENT 可查描述附件。 */
+    /**
+     * 列出证据。
+     *
+     * <p>查询只读：按项目过滤并按 ID 倒序返回，默认仅返回 `EVIDENCE` 分类。
+     * 当 {@code category=ATTACHMENT} 时返回附件分类，不对分类值做白名单校验，
+     * 上层若传入非法值会返回空结果（依赖 DB 条件天然过滤）。</p>
+     *
+     * @param projectId 项目 ID
+     * @param category 证据分类：EVIDENCE/ATTACHMENT；空则默认 EVIDENCE
+     */
     public List<Evidence> list(Long projectId, String category) {
         return mapper.selectList(new QueryWrapper<Evidence>()
                 .eq("project_id", projectId)
@@ -56,10 +70,22 @@ public class EvidenceService {
                 .orderByDesc("id"));
     }
 
+    /**
+     * 列出项目默认证据（category 默认 EVIDENCE）。
+     *
+     * <p>该重载仅提供 `category = null` 的快捷入口，等价调用 {@link #list(Long, String)}，返回行为稳定可复用。</p>
+     */
     public List<Evidence> list(Long projectId) {
         return list(projectId, null);
     }
 
+    /**
+     * 获取单条证据元数据。
+     *
+     * <p>只读按 ID 查询：不存在时抛 {@code BusinessException(4040, ...)}，避免下游空指针。</p>
+     *
+     * @param id 证据 ID
+     */
     public Evidence get(Long id) {
         Evidence e = mapper.selectById(id);
         if (e == null) {
@@ -68,11 +94,40 @@ public class EvidenceService {
         return e;
     }
 
+    /**
+     * 上传到默认存储目录（`ipd.evidence.root/{projectId}`）的便利重载。
+     *
+     * <p>该重载将 `category` 置空，沿用主 `upload` 的角色校验、落盘与审计逻辑；用于上层默认场景减少参数噪音。</p>
+     *
+     * @param projectId 项目 ID
+     * @param file      上传文件
+     * @param linkType  可选，源对象类型
+     * @param linkId    可选，源对象 ID
+     */
     @Transactional
     public Evidence upload(Long projectId, MultipartFile file, String linkType, Long linkId) {
         return upload(projectId, file, linkType, linkId, null);
     }
 
+    /**
+     * 上传文件并落库元数据。
+     *
+     * <p>更新粒度：
+     * <ul>
+     *   <li>参数校验：项目必须存在；文件不能为空。</li>
+     *   <li>落盘动作：在 {@code ipd.evidence.root/{projectId}} 下创建目录并写入随机名文件，生成 SHA-256 摘要。</li>
+     *   <li>元数据落库：插入 {@code EVIDENCE}，并可选生成 {@code EV} 编码；附件类型则改用随机临时码 {@code AT-*}。</li>
+     *   <li>审计/追溯：除附件外均写 `EVIDENCE CREATE` 审计；当 {@code linkType/linkId} 存在时补建 evidences 关系。</li>
+     *   <li>失败策略：方法为 {@code @Transactional}，运行期异常将回滚数据库，但已落入文件系统的临时文件不会自动清理（当前实现的既定行为）。</li>
+     * </ul>
+     * <p>失败回退边界：文件入库与 DB 落库同事务，不一致只在 I/O 失败边界出现（文件已写入但元数据未落库）；该场景当前不做异步清理。</p>
+     *
+     * @param projectId 项目 ID
+     * @param file      上传文件
+     * @param linkType  可选，源对象类型，存在时将建立 `evidences` 关系
+     * @param linkId    可选，源对象 ID
+     * @param category  可选，ATTACHMENT 时不生成正式证据编号/审计
+     */
     @Transactional
     public Evidence upload(Long projectId, MultipartFile file, String linkType, Long linkId, String category) {
         Project project = projectMapper.selectById(projectId);
@@ -131,6 +186,13 @@ public class EvidenceService {
         }
     }
 
+    /**
+     * 按 id 读取证据二进制。
+     *
+     * <p>读取策略：严格使用数据库中记录的绝对路径读取文件，文件不存在/读失败时抛业务异常；
+     * 返回原始字节流，不做任何二次编码。</p>
+     * <p>一致性边界：若文件路径失效（脱库、外部清理），异常会直接向上传播，不返回降级内容。</p>
+     */
     public byte[] readBytes(Long id) {
         Evidence e = get(id);
         try {
@@ -140,6 +202,12 @@ public class EvidenceService {
         }
     }
 
+    /**
+     * 计算文件 SHA-256 摘要。
+     *
+     * <p>私有工具方法；失败时统一抛出业务异常，避免调用层继续处理不同异常类型。</p>
+     * <p>确定性边界：同一输入字节数组返回同一摘要，用于验真与排错追踪。</p>
+     */
     private String sha256(byte[] data) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

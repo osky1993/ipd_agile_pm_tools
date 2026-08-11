@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { api, textResult } from '../client.js'
 
+/** 读工具（readOnlyHint）：面向查询场景，默认无副作用。 */
 /** 读工具（readOnlyHint）：项目/工作项/追溯/DCP/准备度/预警/决策查询。 */
 export function registerReadTools(server: McpServer) {
   server.registerTool('list_projects', {

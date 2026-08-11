@@ -26,6 +26,11 @@ public class MetricsService {
     private final MetricSnapshotMapper snapshotMapper;
     private final ReadinessService readinessService;
 
+    /**
+     * 指标服务依赖注入。
+     * metricsMapper 做主指标聚合；workItemMapper 用于 drilldown；snapshotMapper 做趋势存储；
+     * readinessService 注入 maturity 聚合结果。
+     */
     public MetricsService(MetricsMapper metricsMapper, WorkItemMapper workItemMapper,
                           MetricSnapshotMapper snapshotMapper, ReadinessService readinessService) {
         this.metricsMapper = metricsMapper;
@@ -34,6 +39,14 @@ public class MetricsService {
         this.readinessService = readinessService;
     }
 
+    /**
+     * 获取驾驶舱指标总览（T701/T702 的汇总入口）。
+     * 组合能力/需求/流程/质量四大域的聚合值，并附带 readiness 总结，供首页与统一看板。
+     * 任何 projectId 不存在时抛 4040，避免返回空结构导致前端判空歧义。
+     *
+     * <p>更新/副作用说明：
+     * 当前方法不写明细数据；trend() 在同一服务中会触发快照写入，因此这里的结果可重复计算。</p>
+     */
     public Map<String, Object> overview(Long projectId) {
         Map<String, Object> m = metricsMapper.projectMetrics(projectId);
         if (m == null) {
@@ -84,7 +97,13 @@ public class MetricsService {
         return out;
     }
 
-    /** 指标下钻到原始工作项（规划§15.5：所有指标可下钻）。 */
+    /**
+     * 指标下钻：返回指标口径对应的明细工作项列表。
+     * 支持指标值与条目列表一一对应，便于前端展开查看。
+     *
+     * <p>入参 metric 做白名单分支；未知指标立即抛 BusinessException，防止上层误将错误参数
+     * 误解为“空列表”。</p>
+     */
     public List<WorkItem> drilldown(Long projectId, String metric) {
         QueryWrapper<WorkItem> qw = new QueryWrapper<WorkItem>().eq("project_id", projectId);
         switch (metric) {
@@ -114,7 +133,16 @@ public class MetricsService {
                              Integer reqTotal, Integer reqAccepted) {
     }
 
-    /** 趋势序列（规划§7.4）。读取时顺带对"今天"做一次快照 upsert，历史随使用累积。 */
+    /**
+     * 趋势序列（规划§7.4）。
+     *
+     * <p>执行顺序：
+     * 1) 先触发 {@link #snapshotToday(Long)} 做指标快照 upsert（同日幂等）；
+     * 2) 再读取历史 snapshot + 缺陷入/闭环日报，构建日期连续窗口。</p>
+     *
+     * <p>快照副作用：首次/当天首次调用会写 {@code metric_snapshot}，后续按同日更新，不重复新增；</p>
+     * <p>窗口约束：days 从 1 开始钳制，窗口起点不早于 today- (days-1)。</p>
+     */
     @Transactional
     public List<TrendPoint> trend(Long projectId, int days) {
         snapshotToday(projectId);
@@ -144,7 +172,15 @@ public class MetricsService {
         return points;
     }
 
-    /** 对当天做快照 upsert：同日重复读取只刷新数值，不产生重复行。 */
+    /**
+     * 对当天做快照 upsert。
+     *
+     * <p>持久化对象包含 criteriaTotal/criteriaMet/openDefects/reqTotal/reqAccepted，
+     * 并写入 createdAt/updatedAt；存在即 update，不存在即 insert。</p>
+     *
+     * <p>失败边界：
+     * 项目标识不存在时直接抛 4040，避免生成错误项目的空指标快照污染趋势。</p>
+     */
     private void snapshotToday(Long projectId) {
         Map<String, Object> m = metricsMapper.projectMetrics(projectId);
         if (m == null) {
@@ -175,7 +211,12 @@ public class MetricsService {
         }
     }
 
-    /** DATE() 分组结果 → 日期计数表。驱动可能返回 java.sql.Date/LocalDate，统一走字符串解析。 */
+    /**
+     * 按天聚合映射。
+     *
+     * <p>兼容不同数据库 DATE() 返回类型，统一转为 {@link LocalDate} 作为 key；
+     * 同一天多行自动累加，未命中日期的行忽略。</p>
+     */
     private Map<LocalDate, Long> byDay(List<Map<String, Object>> rows) {
         Map<LocalDate, Long> map = new HashMap<>();
         for (Map<String, Object> r : rows) {
@@ -188,16 +229,30 @@ public class MetricsService {
         return map;
     }
 
-    /** 项目全部工作项（供 CSV 导出）。 */
+    /**
+     * 全项目工作项导出查询（按 type/id 排序），用于 CSV 等批量导出场景。
+     *
+     * <p>返回字段覆盖 {@code projectMapper/drilldownAll} 的全量导出语义；
+     * 不分页、仅按 type/id 排序，消费方需自行控制导出口径。</p>
+     */
     public List<WorkItem> drilldownAll(Long projectId) {
         return workItemMapper.selectList(new QueryWrapper<WorkItem>()
                 .eq("project_id", projectId).orderByAsc("type").orderByAsc("id"));
     }
 
+    /**
+     * 安全数字转换。
+     *
+     * @param o 数据库聚合列
+     * @return null -> 0，避免空值传播到数学运算
+     */
     private long num(Object o) {
         return o == null ? 0 : ((Number) o).longValue();
     }
 
+    /**
+     * 有序样本 P 分位数计算（输入已排序）。
+     */
     private int percentile(List<Integer> sorted, int p) {
         if (sorted.isEmpty()) {
             return 0;

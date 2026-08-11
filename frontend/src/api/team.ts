@@ -1,5 +1,7 @@
 import http from './http'
 
+/** 团队协作 API：负责人与阻塞、图谱、关键路径接口。 */
+
 export interface ColumnCount {
   status: string
   count: number
@@ -130,6 +132,8 @@ export interface CpmResult {
 }
 
 export const teamApi = {
+  /** 查询团队概览（冲刺、关系图、阻塞、交接、负载）。 */
   overview: (projectId: number) => http.get<any, TeamOverview>('/team/overview', { params: { projectId } }),
+  /** 读取关键路径算法结果（CPM），用于排期预警。 */
   criticalPath: (projectId: number) => http.get<any, CpmResult>('/schedule/critical-path', { params: { projectId } }),
 }

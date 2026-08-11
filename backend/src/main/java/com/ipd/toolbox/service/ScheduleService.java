@@ -47,11 +47,20 @@ public class ScheduleService {
     private final WorkItemMapper workItemMapper;
     private final TraceLinkMapper traceLinkMapper;
 
+    /**
+     * 排期服务依赖注入：工作项作为节点全集，trace_link 作为依赖边来源。
+     */
     public ScheduleService(WorkItemMapper workItemMapper, TraceLinkMapper traceLinkMapper) {
         this.workItemMapper = workItemMapper;
         this.traceLinkMapper = traceLinkMapper;
     }
 
+    /**
+     * 获取项目关键路径计算结果。
+     * 汇聚项目内依赖关系并过滤已完成状态、检测环后生成 CPM 与关键链路（含未估算告警点）。
+     *
+     * @param projectId 项目 ID
+     */
     public CpmResult criticalPath(Long projectId) {
         Map<Long, WorkItem> items = new HashMap<>();
         for (WorkItem w : workItemMapper.selectList(new QueryWrapper<WorkItem>()

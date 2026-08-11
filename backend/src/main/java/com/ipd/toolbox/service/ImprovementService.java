@@ -29,6 +29,11 @@ public class ImprovementService {
     private final AuditService audit;
     private final PerfService perfService;
 
+    /**
+     * 改进项服务依赖注入。
+     * mapper 负责数据落库；projectMapper 提供项目信息与编码前缀；
+     * codeGenerator 生成 IMP 编码；audit 记录全生命周期事件；perfService 用于指标改进基线对齐。
+     */
     public ImprovementService(ImprovementMapper mapper, ProjectMapper projectMapper,
                               CodeGenerator codeGenerator, AuditService audit, PerfService perfService) {
         this.mapper = mapper;
@@ -38,6 +43,13 @@ public class ImprovementService {
         this.perfService = perfService;
     }
 
+    /**
+     * 查询项目内改进项列表（只读）。
+     * <p>可按状态筛选并按创建时间倒序返回；上层可据此构建分页和列表优先级。</p>
+     *
+     * @param projectId 项目 ID
+     * @param status 状态过滤（OPEN/DOING/DONE/VERIFIED）
+     */
     public List<Improvement> list(Long projectId, String status) {
         QueryWrapper<Improvement> qw = new QueryWrapper<Improvement>().eq("project_id", projectId);
         if (status != null && !status.isBlank()) {
@@ -46,6 +58,17 @@ public class ImprovementService {
         return mapper.selectList(qw.orderByDesc("created_at").orderByDesc("id"));
     }
 
+    /**
+     * 创建一条改进项记录（PM-only，写链路）：
+     * <ol>
+     *   <li>校验项目存在与标题非空。</li>
+     *   <li>若有 metricKey，先校验指标定义有效；未传基线时自动抓取当前指标值作为基线。</li>
+     *   <li>补齐 code、默认状态、时间戳、操作者后入库。</li>
+     *   <li>写入 CREATE 审计，形成生命周期起点。</li>
+     * </ol>
+     * <p>更新粒度：新增一条改进项主表记录。</p>
+     * <p>失败策略：指标无效或数据库异常抛异常，事务回滚。</p>
+     */
     @Transactional
     public Improvement create(Improvement in) {
         UserContext.requireRole("PM");
@@ -88,6 +111,15 @@ public class ImprovementService {
         return in;
     }
 
+    /**
+     * 更新改进项（写链路）：
+     * <ul>
+     *   <li>仅允许 OPEN 或 DOING 状态编辑。</li>
+     *   <li>仅处理非空 patch 字段，避免空值覆盖。</li>
+     *   <li>更新后刷新更新时间和更新人，并记录 UPDATE 审计。</li>
+     * </ul>
+     * <p>更新粒度：只影响改进项元信息（标题、措施、目标值、截止日）。</p>
+     */
     @Transactional
     public Improvement update(Long id, Improvement patch) {
         UserContext.requireRole("PM");
@@ -106,7 +138,16 @@ public class ImprovementService {
         return old;
     }
 
-    /** 状态推进（只允许顺序前进一步）。VERIFIED 必填实际值（有关联指标时可自动取当前值）。 */
+    /**
+     * 状态推进（写链路）：
+     * <ol>
+     *   <li>按 FLOW 强制顺序推进，不允许跳步或回退。</li>
+     *   <li>进入 VERIFIED 需满足实际值；未传入则尝试按关联 metricKey 自动取当下值。</li>
+     *   <li>写入结果值与结论（若传入），并刷新更新时间。</li>
+     *   <li>记录 STATUS_CHANGE 审计，记录基线与实际值差分上下文。</li>
+     * </ol>
+     * <p>更新粒度：变更状态（及 VERIFIED 时的 resultValue/conclusion）。</p>
+     */
     @Transactional
     public Improvement transition(Long id, String toStatus, BigDecimal resultValue, String conclusion) {
         UserContext.requireRole("PM");
@@ -142,6 +183,14 @@ public class ImprovementService {
         return old;
     }
 
+    /**
+     * 删除改进项（硬删，写链路）：
+     * <ul>
+     *   <li>先读取旧值，确保 DELETE 审计可回放。</li>
+     *   <li>执行主表删除，不处理历史指标快照联动。</li>
+     *   <li>PM-only 权限控制。</li>
+     * </ul>
+     */
     @Transactional
     public void delete(Long id) {
         UserContext.requireRole("PM");
@@ -150,6 +199,10 @@ public class ImprovementService {
         audit.record(old.getProjectId(), "IMPROVEMENT", id, "DELETE", "删除改进 " + old.getCode(), null, null);
     }
 
+    /**
+     * 读取改进项详情（只读）：
+     * <p>用于 update/transition/delete 前置校验；未命中抛 4040。</p>
+     */
     private Improvement get(Long id) {
         Improvement imp = mapper.selectById(id);
         if (imp == null) {

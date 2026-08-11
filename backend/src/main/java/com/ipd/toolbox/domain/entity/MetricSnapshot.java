@@ -6,6 +6,12 @@ import lombok.Data;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * 指标快照实体。
+ *
+ * <p>按日期存储项目治理指标的聚合结果（准入率、缺陷与需求完成度等），
+ * 与趋势统计和报表联动，支撑可复算基线。
+ */
 @Data
 @TableName("metric_snapshot")
 public class MetricSnapshot {
