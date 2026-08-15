@@ -7,8 +7,6 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 *.tsbuildinfo
-frontend/vite.config.js
-frontend/vite.config.d.ts
 
 # e2e（运行时产物：登录态与 seed 快照在前端侧，报告/日志/用例产物统一落 deploy/.e2e）
 frontend/e2e/.state/

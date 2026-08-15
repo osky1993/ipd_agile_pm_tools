@@ -14,6 +14,8 @@ const overview = ref<PerfOverview | null>(null)
 const improvements = ref<Improvement[]>([])
 const activeTab = ref('metrics')
 const impFilter = ref('')
+/** 改进项标题关键词过滤：摩擦日志用「候选：」等前缀分类，需要能筛出来 */
+const impKeyword = ref('')
 
 const drawerVisible = ref(false)
 const currentId = ref<number | null>(null)
@@ -215,8 +217,12 @@ async function confirmTarget(m: Metric) {
 }
 
 // ---------- 改进项 ----------
-const filteredImps = computed(() =>
-  impFilter.value ? improvements.value.filter((i) => i.status === impFilter.value) : improvements.value)
+const filteredImps = computed(() => {
+  const kw = impKeyword.value.trim()
+  return improvements.value.filter(
+    (i) => (!impFilter.value || i.status === impFilter.value) && (!kw || i.title.includes(kw)),
+  )
+})
 
 function openCreateImp(metricKey?: string) {
   editingImp.value = null
@@ -392,6 +398,7 @@ function openStale(row: { id: number }) { currentId.value = row.id; drawerVisibl
             <el-radio-button value="">全部</el-radio-button>
             <el-radio-button v-for="s in IMP_FLOW" :key="s" :value="s">{{ IMP_LABEL[s] }}</el-radio-button>
           </el-radio-group>
+          <el-input v-model="impKeyword" size="small" clearable placeholder="按标题筛选（如「候选：」）" style="width:190px" />
           <el-button type="primary" size="small" @click="openCreateImp()"><el-icon><Plus /></el-icon>新建改进</el-button>
         </div>
         <el-table :data="filteredImps" border>

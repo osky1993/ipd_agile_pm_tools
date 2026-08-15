@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "composite": true,
+    // 产物丢进 node_modules，别落在工程根：vite 解析配置时 .js 优先于 .ts，
+    // 一个残留的 vite.config.js 会静默顶掉 vite.config.ts（曾导致 e2e 全部接口 ECONNREFUSED）
+    "outDir": "./node_modules/.tmp/tsconfig.node",
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
