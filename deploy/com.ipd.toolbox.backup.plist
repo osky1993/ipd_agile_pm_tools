@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  每日自动备份（docs/07 §1 A2）。
+
+  安装：
+    cp deploy/com.ipd.toolbox.backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ipd.toolbox.backup.plist
+
+  卸载：
+    launchctl unload ~/Library/LaunchAgents/com.ipd.toolbox.backup.plist
+
+  立刻跑一次（验证配置是否正确）：
+    launchctl start com.ipd.toolbox.backup
+
+  查看状态与最近退出码：
+    launchctl list | grep com.ipd.toolbox.backup
+
+  注意：
+  - ProgramArguments 里的路径是绝对路径，若仓库搬家须同步修改本文件。
+  - StartCalendarInterval 是 03:10；若那时机器睡着了，launchd 会在**唤醒后补跑一次**
+    （不会把错过的多次累积起来跑），对每日备份来说正是想要的语义。
+  - backup.sh 自身按 SCRIPT_DIR 解析路径，不依赖 WorkingDirectory；这里仍显式设一个，
+    使日志里的相对路径可读。
+  - docker 装在 /usr/local/bin 或 /opt/homebrew/bin，launchd 的默认 PATH 不含它们，
+    故下面显式设了 PATH。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ipd.toolbox.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/osky/workspaces/workspace_tools/pm/deploy/backup.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/osky/workspaces/workspace_tools/pm/deploy</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>10</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/osky/workspaces/workspace_tools/pm/deploy/backups/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/osky/workspaces/workspace_tools/pm/deploy/backups/launchd.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

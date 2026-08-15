@@ -133,8 +133,15 @@ npm run dev                                # http://localhost:5173
 ### 备份与恢复
 
 ```bash
-./deploy/backup.sh               # mysqldump + 证据目录打包
-./deploy/restore.sh <备份文件>    # 已实测：删库恢复后数据与 SQL 视图完整还原
+./deploy/backup.sh                     # mysqldump + 证据目录打包，并滚动清理旧备份
+./deploy/restore.sh <备份目录>          # 已实测：删库恢复后数据与 SQL 视图完整还原
+./deploy/restore_drill.sh              # 每月恢复演练：恢复到临时库核对后丢弃，不碰主库
+```
+
+保留策略：近 14 天全量 + 更早的每周留 1 份。每日自动备份（03:10）安装两行：
+
+```bash
+cp deploy/com.ipd.toolbox.backup.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.ipd.toolbox.backup.plist
 ```
 
 ## AI 对接（MCP Server）
