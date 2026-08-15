@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.*;
@@ -246,7 +247,7 @@ public class TeamService {
         for (Map.Entry<Long, List<WorkItem>> e : unmetByDependent.entrySet()) {
             WorkItem a = items.get(e.getKey());
             String causes = e.getValue().stream()
-                    .map(b -> b.getCode() + "(" + b.getStatus() + ")").collect(Collectors.joining("、"));
+                    .map(b -> b.getCode() + "(" + Labels.status(b.getStatus(), b.getType()) + ")").collect(Collectors.joining("、"));
             List<Long> causeIds = e.getValue().stream().map(WorkItem::getId).toList();
             if (GENERIC_TYPES.contains(a.getType())
                     && Set.of("Ready", "In Progress", "Verification").contains(a.getStatus())) {
@@ -271,7 +272,7 @@ public class TeamService {
             long days = ChronoUnit.DAYS.between(lm.toLocalDate(), today);
             if (days > STALE_DAYS) {
                 put(out, new Blocker("MED", "STALE_WIP", "在制品停滞",
-                        w.getCode() + " " + w.getTitle() + " 已 " + days + " 天无状态变化（" + w.getStatus() + "）",
+                        w.getCode() + " " + w.getTitle() + " 已 " + days + " 天无状态变化（" + Labels.status(w.getStatus(), w.getType()) + "）",
                         w.getId(), w.getCode(), List.of(), days));
             }
         }
@@ -288,7 +289,7 @@ public class TeamService {
                         w.getId(), w.getCode(), List.of(), null));
             } else if (vs.fail() > 0) {
                 put(out, new Blocker("HIGH", "VERIFY_WAIT", "验证失败待处理",
-                        w.getCode() + " " + w.getTitle() + " 的用例最新执行 FAIL（" + vs.fail() + " 个）",
+                        w.getCode() + " " + w.getTitle() + " 的用例最新执行失败（" + vs.fail() + " 个）",
                         w.getId(), w.getCode(), List.of(), null));
             } else if (vs.pass() == 0) {
                 put(out, new Blocker("MED", "VERIFY_WAIT", "用例尚未执行",
@@ -317,7 +318,7 @@ public class TeamService {
                             x.getId(), x.getCode(), List.of(d.getId()), null));
                 } else if (Set.of("In Progress", "Verification").contains(x.getStatus())) {
                     put(out, new Blocker("MED", "DEFECT_DRAG", "缺陷未闭环需求仍在推进",
-                            x.getCode() + " 推进中，关联缺陷 " + d.getCode() + "（" + d.getStatus() + "）未闭环",
+                            x.getCode() + " 推进中，关联缺陷 " + d.getCode() + "（" + Labels.status(d.getStatus(), d.getType()) + "）未闭环",
                             x.getId(), x.getCode(), List.of(d.getId()), null));
                 }
             }

@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { myApi, type MyToday, type MyItem, type Alert } from '@/api/my'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
-import { statusLabel, typeLabel } from '@/utils/labels'
+import { statusLabel, typeLabel, severityLabel } from '@/utils/labels'
 
 /**
  * 「我的一天」跨项目工作台（默认首页）：
@@ -172,7 +172,7 @@ onMounted(() => {
             <div class="card-top"><span class="code">{{ a.refCode }}</span></div>
             <div class="title">{{ a.title }}</div>
             <div class="meta">
-              <el-tag size="small" :type="sevType(a.severity)">{{ a.severity }}</el-tag>
+              <el-tag size="small" :type="sevType(a.severity)">{{ severityLabel(a.severity) }}</el-tag>
               <span class="sub detail">{{ a.detail }}</span>
             </div>
           </div>

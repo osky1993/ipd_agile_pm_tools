@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Decision;
@@ -384,7 +385,7 @@ public class AlertService {
                     : ChronoUnit.DAYS.between(d.getCreatedAt().toLocalDate(), today);
             if (days > DEFECT_AGING_DAYS) {
                 out.add(new Alert("MED", "DEFECT_AGING", "缺陷超" + DEFECT_AGING_DAYS + "天未关闭",
-                        d.getCode() + " " + d.getTitle() + " 已打开 " + days + " 天（当前 " + d.getStatus() + "）",
+                        d.getCode() + " " + d.getTitle() + " 已打开 " + days + " 天（当前 " + Labels.status(d.getStatus(), d.getType()) + "）",
                         "WORK_ITEM", d.getId(), d.getCode(), null));
             }
         }

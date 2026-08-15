@@ -7,7 +7,7 @@ import {
 } from '@/api/workitem'
 import { versionApi, type ProductVersion } from '@/api/catalog'
 import { evidenceApi, type Evidence } from '@/api/governance'
-import { statusLabel, typeLabel, relationLabel } from '@/utils/labels'
+import { statusLabel, typeLabel, relationLabel, auditActionLabel } from '@/utils/labels'
 import MarkdownView from '@/components/MarkdownView.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import UserSelect from '@/components/UserSelect.vue'
@@ -350,7 +350,9 @@ const statusType = (s: string) => {
             </el-timeline>
             <el-divider content-position="left">审计事件</el-divider>
             <el-table :data="audits" size="small" border>
-              <el-table-column prop="action" label="动作" width="120" />
+              <el-table-column label="动作" width="120">
+                <template #default="{ row }">{{ auditActionLabel(row.action) }}</template>
+              </el-table-column>
               <el-table-column prop="summary" label="摘要" show-overflow-tooltip />
               <el-table-column prop="at" label="时间" width="160" />
             </el-table>

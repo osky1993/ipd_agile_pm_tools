@@ -1,6 +1,7 @@
 package com.ipd.toolbox.security;
 
 import com.ipd.toolbox.common.BusinessException;
+import com.ipd.toolbox.common.Labels;
 
 /** 请求线程内的当前用户上下文，由 JwtAuthFilter 写入、拦截器清理。 */
 public final class UserContext {
@@ -53,7 +54,9 @@ public final class UserContext {
     public static void requireRole(String... roles) {
         UserPrincipal p = require();
         if (!p.hasAnyRole(roles)) {
-            throw new BusinessException(4030, "无权限：需要角色 " + String.join("/", roles));
+            String need = java.util.Arrays.stream(roles).map(Labels::role)
+                    .collect(java.util.stream.Collectors.joining(" / "));
+            throw new BusinessException(4030, "无权限：需要角色 " + need);
         }
     }
 

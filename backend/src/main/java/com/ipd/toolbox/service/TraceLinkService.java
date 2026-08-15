@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.TraceLink;
@@ -90,8 +91,8 @@ public class TraceLinkService {
         link.setCreatedAt(LocalDateTime.now());
         mapper.insert(link);
         audit.record(link.getProjectId(), "TRACE_LINK", link.getId(), "CREATE",
-                link.getSourceType() + "#" + link.getSourceId() + " -" + link.getRelation()
-                        + "-> " + link.getTargetType() + "#" + link.getTargetId(), null, link);
+                link.getSourceType() + "#" + link.getSourceId() + " 「" + Labels.relation(link.getRelation())
+                        + "」 " + link.getTargetType() + "#" + link.getTargetId(), null, link);
         return link;
     }
 

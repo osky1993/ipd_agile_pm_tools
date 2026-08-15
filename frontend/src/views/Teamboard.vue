@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 import { teamApi, type TeamOverview, type Blocker, type Handoff, type CpmResult } from '@/api/team'
 import ProjectChips from '@/components/ProjectChips.vue'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
-import { statusLabel } from '@/utils/labels'
+import { statusLabel, severityLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const data = ref<TeamOverview | null>(null)
@@ -392,7 +392,7 @@ onUnmounted(() => {
             <div v-if="!data.blockers.length" class="a-empty">当前无阻塞 ✓</div>
             <div v-for="(b, i) in data.blockers" :key="i" class="a-row" :class="{ link: b.itemId }"
               @click="openItem(b.itemId)">
-              <span class="a-sev" :class="{ pulseAnim: b.severity === 'HIGH' }" :style="{ background: SEV_COLOR[b.severity] }">{{ b.severity }}</span>
+              <span class="a-sev" :class="{ pulseAnim: b.severity === 'HIGH' }" :style="{ background: SEV_COLOR[b.severity] }">{{ severityLabel(b.severity) }}</span>
               <div class="a-body">
                 <div class="a-title">{{ b.title }}</div>
                 <div class="a-detail">{{ b.detail }}</div>

@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Improvement;
@@ -125,7 +126,8 @@ public class ImprovementService {
         UserContext.requireRole("PM");
         Improvement old = get(id);
         if (!"OPEN".equals(old.getStatus()) && !"DOING".equals(old.getStatus())) {
-            throw new BusinessException("仅 OPEN/DOING 状态可编辑");
+            throw new BusinessException("仅「待启动」「进行中」状态可编辑，当前为「"
+                    + Labels.improvementStatus(old.getStatus()) + "」");
         }
         if (patch.getTitle() != null) old.setTitle(patch.getTitle());
         if (patch.getMeasure() != null) old.setMeasure(patch.getMeasure());
@@ -155,7 +157,8 @@ public class ImprovementService {
         int from = FLOW.indexOf(old.getStatus());
         int to = FLOW.indexOf(toStatus);
         if (to < 0 || to != from + 1) {
-            throw new BusinessException("非法流转: " + old.getStatus() + " → " + toStatus + "（只允许顺序前进）");
+            throw new BusinessException("非法流转：" + Labels.improvementStatus(old.getStatus())
+                    + " → " + Labels.improvementStatus(toStatus) + "（只允许顺序前进，不可跳步或回退）");
         }
         if ("VERIFIED".equals(toStatus)) {
             if (resultValue == null && old.getMetricKey() != null) {
@@ -177,7 +180,7 @@ public class ImprovementService {
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);
         audit.record(old.getProjectId(), "IMPROVEMENT", id, "STATUS_CHANGE",
-                "改进 " + old.getCode() + " → " + toStatus
+                "改进 " + old.getCode() + " → " + Labels.improvementStatus(toStatus)
                         + ("VERIFIED".equals(toStatus) ? "（基线 " + old.getBaselineValue()
                         + " → 实际 " + old.getResultValue() + "）" : ""), null, old);
         return old;

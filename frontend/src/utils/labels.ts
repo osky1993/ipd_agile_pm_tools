@@ -80,3 +80,32 @@ export const caseStatusLabel = (s: string | null | undefined) => (s ? CASE_STATU
 /** 测试执行结果 */
 const RESULT_ZH: Record<string, string> = { PASS: '通过', FAIL: '失败', BLOCKED: '阻塞' }
 export const testResultLabel = (r: string | null | undefined) => (r ? RESULT_ZH[r] ?? r : '未执行')
+
+/** 审计动作（AuditEvent.action 的全部取值） */
+const AUDIT_ACTION_ZH: Record<string, string> = {
+  CREATE: '新建', UPDATE: '更新', DELETE: '删除',
+  STATUS_CHANGE: '状态变更', OWNER_CHANGE: '责任人变更',
+  DECISION: '决策', API_TOKEN: '签发令牌',
+}
+export const auditActionLabel = (a: string | null | undefined) => (a ? AUDIT_ACTION_ZH[a] ?? a : '')
+
+/** 角色（与 V2__seed_roles.sql 的 sys_role.name 一致） */
+const ROLE_ZH: Record<string, string> = {
+  ADMIN: '系统管理员', PM: '项目经理', PO: '产品负责人', DEV: '开发',
+  QA: '测试', QUALITY: '质量负责人', REVIEWER: '评审角色',
+}
+export const roleLabel = (r: string | null | undefined) => (r ? ROLE_ZH[r] ?? r : '')
+
+/** 预警/阻塞严重度 */
+const SEVERITY_ZH: Record<string, string> = { HIGH: '高', MED: '中', LOW: '低' }
+export const severityLabel = (s: string | null | undefined) => (s ? SEVERITY_ZH[s] ?? s : '')
+
+/** 项目生命周期状态 */
+const LIFECYCLE_ZH: Record<string, string> = { ACTIVE: '进行中', ON_HOLD: '暂停', CLOSED: '已结项' }
+export const lifecycleLabel = (s: string | null | undefined) => (s ? LIFECYCLE_ZH[s] ?? s : '')
+
+/** 改进项状态（OPEN→DOING→DONE→VERIFIED） */
+const IMPROVEMENT_ZH: Record<string, string> = {
+  OPEN: '待启动', DOING: '进行中', DONE: '已落地', VERIFIED: '已验证',
+}
+export const improvementStatusLabel = (s: string | null | undefined) => (s ? IMPROVEMENT_ZH[s] ?? s : '')

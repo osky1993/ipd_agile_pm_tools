@@ -6,7 +6,7 @@ import { alertApi, type Alert } from '@/api/perf'
 import { type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
-import { statusLabel } from '@/utils/labels'
+import { statusLabel, severityLabel } from '@/utils/labels'
 
 const projectId = ref<number | null>(null)
 const m = ref<MetricsOverview | null>(null)
@@ -150,7 +150,7 @@ function openItem(w: WorkItem) { currentId.value = w.id; drillVisible.value = fa
         </template>
         <div v-for="(a, i) in shownAlerts" :key="i" class="alert-row"
           :class="{ link: a.refType === 'WORK_ITEM' }" @click="openAlert(a)">
-          <el-tag :type="SEV_TAG[a.severity]" size="small" class="sev">{{ a.severity }}</el-tag>
+          <el-tag :type="SEV_TAG[a.severity]" size="small" class="sev">{{ severityLabel(a.severity) }}</el-tag>
           <b class="a-title">{{ a.title }}</b>
           <span class="a-detail">{{ a.detail }}</span>
           <router-link v-if="['GATE_CRITERION', 'DECISION'].includes(a.refType)" to="/dcp" class="a-go" @click.stop>去处理 →</router-link>

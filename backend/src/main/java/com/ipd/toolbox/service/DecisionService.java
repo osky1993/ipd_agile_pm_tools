@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Decision;
@@ -112,7 +113,7 @@ public class DecisionService {
         d.setDecidedAt(LocalDateTime.now());
         mapper.insert(d);
         audit.record(d.getProjectId(), "DECISION", d.getId(), "DECISION",
-                "决策 " + d.getCode() + " [" + d.getDecisionType() + "] 结论=" + d.getConclusion()
+                "决策 " + d.getCode() + " [" + Labels.decisionType(d.getDecisionType()) + "] 结论=" + Labels.conclusion(d.getConclusion())
                         + (d.getPrevDecisionId() != null ? "（修订自 #" + d.getPrevDecisionId() + "）" : ""),
                 null, d);
         return d;

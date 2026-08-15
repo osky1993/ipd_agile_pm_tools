@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.*;
@@ -109,7 +110,7 @@ public class TestRunService {
         run.setRunAt(LocalDateTime.now());
         mapper.insert(run);
         audit.record(run.getProjectId(), "TEST_RUN", run.getId(), "CREATE",
-                "执行用例 " + tc.getCode() + " 结果=" + run.getResult(), null, run);
+                "执行用例 " + tc.getCode() + " 结果=" + Labels.testResult(run.getResult()), null, run);
 
         if ("FAIL".equals(run.getResult()) && autoCreateDefect && run.getDefectId() == null) {
             WorkItem defect = new WorkItem();

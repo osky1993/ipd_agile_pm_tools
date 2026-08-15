@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ipd.toolbox.common.BusinessException;
@@ -150,7 +151,9 @@ public class RiskChangeExcelService {
             if (!r.strategy().isBlank()) {
                 strategy = r.strategy().trim().toUpperCase();
                 if (!STRATEGIES.contains(strategy)) {
-                    throw new BusinessException("策略须为 AVOID/TRANSFER/MITIGATE/ACCEPT，当前: " + r.strategy());
+                    throw new BusinessException("策略须为 "
+                            + Labels.options(java.util.List.of("AVOID", "TRANSFER", "MITIGATE", "ACCEPT"), Labels::riskStrategy)
+                            + " 之一，当前: " + r.strategy());
                 }
             }
             if (!r.mitigation().isBlank() || !r.dueDate().isBlank()

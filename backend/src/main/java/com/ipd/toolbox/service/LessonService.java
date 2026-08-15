@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Lesson;
@@ -58,7 +59,7 @@ public class LessonService {
             throw new BusinessException("标题不能为空");
         }
         if (l.getCategory() == null || !CATEGORIES.contains(l.getCategory())) {
-            throw new BusinessException("类别须为 " + CATEGORIES + " 之一");
+            throw new BusinessException("类别须为 " + Labels.options(CATEGORIES, Labels::lessonCategory) + " 之一");
         }
         if (l.getProjectId() == null) {
             throw new BusinessException("须指定项目");
@@ -69,7 +70,7 @@ public class LessonService {
         l.setDeleted(0);
         mapper.insert(l);
         audit.record(l.getProjectId(), "LESSON", l.getId(), "CREATE",
-                "登记经验教训 [" + l.getCategory() + "] " + l.getTitle(), null, null);
+                "登记经验教训 [" + Labels.lessonCategory(l.getCategory()) + "] " + l.getTitle(), null, null);
         return l;
     }
 

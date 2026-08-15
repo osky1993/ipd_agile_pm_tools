@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.WorkItem;
 import org.springframework.stereotype.Service;
@@ -73,7 +74,8 @@ public class WorkItemBatchService {
                 }
                 String type = it.type() == null ? "" : it.type().toUpperCase();
                 if (!CREATE_TYPES.contains(type)) {
-                    throw new BusinessException("类型须为 " + CREATE_TYPES + " 之一，当前: " + it.type());
+                    throw new BusinessException("类型须为 " + Labels.options(CREATE_TYPES, Labels::workItemType)
+                            + " 之一，当前: " + it.type());
                 }
                 Long parentId = null;
                 if (it.parentCode() != null && !it.parentCode().isBlank()) {
@@ -87,7 +89,7 @@ public class WorkItemBatchService {
                 }
                 if (req.dryRun()) {
                     out.add(new BatchItemResult(null, null, true,
-                            "[预览] " + type + " " + it.title()
+                            "[预览] " + Labels.workItemType(type) + " " + it.title()
                                     + (parentId != null ? "（挂 " + it.parentCode() + " 下）" : "")));
                     continue;
                 }

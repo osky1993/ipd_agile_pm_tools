@@ -2,6 +2,7 @@ package com.ipd.toolbox.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
+import com.ipd.toolbox.common.Labels;
 import com.ipd.toolbox.domain.entity.Project;
 import com.ipd.toolbox.domain.entity.TraceLink;
 import com.ipd.toolbox.domain.entity.WorkItem;
@@ -449,7 +450,9 @@ public class WorkItemService {
         }
         if (!StateMachine.canTransition(type, from, toStatus)) {
             throw new BusinessException(4091,
-                    "不允许的状态流转：" + from + " → " + toStatus + "（类型 " + type.label() + "）");
+                    "不允许的状态流转：" + Labels.status(from, item.getType())
+                            + " → " + Labels.status(toStatus, item.getType())
+                            + "（类型 " + type.label() + "）");
         }
         boolean backward = StateMachine.isBackward(type, from, toStatus);
         if (backward && (reason == null || reason.isBlank())) {
@@ -508,7 +511,8 @@ public class WorkItemService {
         statusLogMapper.insert(log);
 
         audit.record(item.getProjectId(), "WORK_ITEM", id, "STATUS_CHANGE",
-                item.getCode() + " 状态 " + from + " → " + toStatus
+                item.getCode() + " 状态 " + Labels.status(from, item.getType())
+                        + " → " + Labels.status(toStatus, item.getType())
                         + (reason != null ? "（" + reason + "）" : ""),
                 Set.of("status", from), Set.of("status", toStatus));
         return item;

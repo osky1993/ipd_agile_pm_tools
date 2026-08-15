@@ -128,7 +128,7 @@ async function onDrop(status: string) {
   if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) {
     try {
       const r = await ElMessageBox.prompt(
-        `将「${item.code}」从 ${item.status} 回退到 ${status}，请填写理由：`,
+        `将「${item.code}」从 ${statusLabel(item.status, item.type)} 回退到 ${statusLabel(status, item.type)}，请填写理由：`,
         '状态回退',
         { confirmButtonText: '确认回退', cancelButtonText: '取消', inputValidator: (v) => (v && v.trim() ? true : '理由不能为空') },
       )

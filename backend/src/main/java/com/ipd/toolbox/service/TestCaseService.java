@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Project;
@@ -113,7 +114,8 @@ public class TestCaseService {
         if (tc.getStatus() == null || tc.getStatus().isBlank()) {
             tc.setStatus("ACTIVE");
         } else if (!STATUSES.contains(tc.getStatus())) {
-            throw new BusinessException("无效用例状态: " + tc.getStatus());
+            throw new BusinessException("无效用例状态：" + tc.getStatus()
+                    + "，须为 " + Labels.options(STATUSES, Labels::caseStatus) + " 之一");
         }
         tc.setCode(codeGenerator.next(project.getId(), project.getCode(), "TC"));
         tc.setCreatedBy(uid);
@@ -193,7 +195,8 @@ public class TestCaseService {
     public TestCase changeStatus(Long id, String status) {
         UserContext.requireRole("QA", "PM");
         if (!STATUSES.contains(status)) {
-            throw new BusinessException("无效用例状态: " + status);
+            throw new BusinessException("无效用例状态：" + status
+                    + "，须为 " + Labels.options(STATUSES, Labels::caseStatus) + " 之一");
         }
         TestCase old = get(id);
         String before = old.getStatus();
@@ -202,7 +205,7 @@ public class TestCaseService {
         old.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(old);
         audit.record(old.getProjectId(), "TEST_CASE", id, "STATUS_CHANGE",
-                "用例 " + old.getCode() + " 状态 " + before + " → " + status, null, old);
+                "用例 " + old.getCode() + " 状态 " + Labels.caseStatus(before) + " → " + Labels.caseStatus(status), null, old);
         return old;
     }
 

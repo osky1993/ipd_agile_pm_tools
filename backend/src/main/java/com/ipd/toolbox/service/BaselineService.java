@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Baseline;
@@ -168,7 +169,8 @@ public class BaselineService {
             itemMapper.insert(item);
         }
         audit.record(projectId, "BASELINE", b.getId(), "CREATE",
-                "建立基线 " + b.getName() + "（" + scope.size() + " 项，来源 " + source + "）", null, null);
+                "建立基线 " + b.getName() + "（" + scope.size() + " 项，来源 "
+                        + ("DCP".equals(source) ? "DCP 固化" : "手动") + "）", null, null);
         return b;
     }
 

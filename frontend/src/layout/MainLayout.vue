@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { workItemApi, type WorkItem } from '@/api/workitem'
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import QuickCreateDialog from '@/components/QuickCreateDialog.vue'
-import { typeLabel } from '@/utils/labels'
+import { typeLabel, roleLabel } from '@/utils/labels'
 import { useHotkeys } from '@/utils/hotkeys'
 
 const route = useRoute()
@@ -137,7 +137,7 @@ const HOTKEY_HELP: [string, string][] = [
             </template>
           </el-autocomplete>
           <span class="user">{{ auth.displayName }}</span>
-          <el-tag v-for="r in auth.roles" :key="r" size="small" type="info" class="role-tag">{{ r }}</el-tag>
+          <el-tag v-for="r in auth.roles" :key="r" size="small" type="info" class="role-tag">{{ roleLabel(r) }}</el-tag>
           <el-button link type="primary" @click="logout">退出</el-button>
         </div>
       </el-header>

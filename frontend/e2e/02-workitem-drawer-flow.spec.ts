@@ -124,7 +124,9 @@ test('建需求 → 守卫两次拦截 → 补齐后拉入迭代并流转', asyn
   await expectToast(page, 'success', '状态已更新为 In Progress')
   await expect(drawer.locator('.head .el-tag').first()).toHaveText('进行中')
 
-  // ---- 7. 审计留痕 ----
+  // ---- 7. 审计留痕（动作与状态均为中文——A5 汉化后的契约）----
   await drawer.getByRole('tab', { name: /审计/ }).click()
-  await expect(drawer).toContainText('Ready')
+  await expect(drawer).toContainText('状态变更')
+  await expect(drawer).toContainText(`${code} 状态 待办 → 就绪`)
+  await expect(drawer).toContainText(`${code} 状态 就绪 → 进行中`)
 })

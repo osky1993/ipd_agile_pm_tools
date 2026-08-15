@@ -6,7 +6,7 @@ import { perfApi, type PerfOverview, type Metric, type Improvement, type TrendPo
 import WorkItemDrawer from '@/components/WorkItemDrawer.vue'
 import ProjectChips from '@/components/ProjectChips.vue'
 import { useAuthStore } from '@/stores/auth'
-import { statusLabel } from '@/utils/labels'
+import { statusLabel, improvementStatusLabel as IMP_LABEL } from '@/utils/labels'
 
 const auth = useAuthStore()
 const projectId = ref<number | null>(null)
@@ -127,7 +127,6 @@ function renderCfd() {
 }
 
 const IMP_FLOW = ['OPEN', 'DOING', 'DONE', 'VERIFIED']
-const IMP_LABEL: Record<string, string> = { OPEN: '待启动', DOING: '进行中', DONE: '已落地', VERIFIED: '已验证' }
 const IMP_TAG: Record<string, string> = { OPEN: 'info', DOING: 'warning', DONE: '', VERIFIED: 'success' }
 
 /** 全部指标平铺（含 L3），供改进项下拉与名称映射 */
@@ -280,7 +279,7 @@ async function advance(imp: Improvement) {
   }
   await perfApi.transitionImprovement(imp.id, to)
   improvements.value = await perfApi.improvements(projectId.value)
-  ElMessage.success(`已推进到 ${IMP_LABEL[to]}`)
+  ElMessage.success(`已推进到 ${IMP_LABEL(to)}`)
 }
 async function submitVerify() {
   if (!verifyImp.value || !projectId.value) return
@@ -396,7 +395,7 @@ function openStale(row: { id: number }) { currentId.value = row.id; drawerVisibl
         <div class="sub-bar">
           <el-radio-group v-model="impFilter" size="small">
             <el-radio-button value="">全部</el-radio-button>
-            <el-radio-button v-for="s in IMP_FLOW" :key="s" :value="s">{{ IMP_LABEL[s] }}</el-radio-button>
+            <el-radio-button v-for="s in IMP_FLOW" :key="s" :value="s">{{ IMP_LABEL(s) }}</el-radio-button>
           </el-radio-group>
           <el-input v-model="impKeyword" size="small" clearable placeholder="按标题筛选（如「候选：」）" style="width:190px" />
           <el-button type="primary" size="small" @click="openCreateImp()"><el-icon><Plus /></el-icon>新建改进</el-button>
@@ -420,14 +419,14 @@ function openStale(row: { id: number }) { currentId.value = row.id; drawerVisibl
           </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }">
-              <el-tag size="small" :type="IMP_TAG[row.status]">{{ IMP_LABEL[row.status] }}</el-tag>
+              <el-tag size="small" :type="IMP_TAG[row.status]">{{ IMP_LABEL(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="220">
             <template #default="{ row }">
               <el-button v-if="row.metricKey" link size="small" @click="openTrend(row.metricKey, row)">趋势</el-button>
               <el-button v-if="nextStatus(row)" link type="primary" size="small" @click="advance(row)">
-                {{ nextStatus(row) === 'VERIFIED' ? '验证效果' : '推进→' + IMP_LABEL[nextStatus(row)!] }}
+                {{ nextStatus(row) === 'VERIFIED' ? '验证效果' : '推进→' + IMP_LABEL(nextStatus(row)!) }}
               </el-button>
               <el-button v-if="['OPEN', 'DOING'].includes(row.status)" link size="small" @click="openEditImp(row)">编辑</el-button>
               <el-button link type="danger" size="small" @click="removeImp(row)">删除</el-button>

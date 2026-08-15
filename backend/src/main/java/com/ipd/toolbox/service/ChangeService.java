@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -78,7 +79,7 @@ public class ChangeService {
         List<TraceLink> out = traceLinkMapper.selectList(new QueryWrapper<TraceLink>()
                 .eq("source_type", "WORK_ITEM").eq("source_id", changeId));
         for (TraceLink l : out) {
-            addItem(collected, l.getTargetType(), l.getTargetId(), "变更 " + l.getRelation());
+            addItem(collected, l.getTargetType(), l.getTargetId(), "变更" + Labels.relation(l.getRelation()));
             // Hop2：受影响需求的测试与版本
             if ("WORK_ITEM".equals(l.getTargetType())) {
                 Long reqId = l.getTargetId();

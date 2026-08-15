@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Project;
@@ -136,7 +137,8 @@ public class ProjectService {
         }
         if (patch.getLifecycleStatus() != null) {
             if (!java.util.Set.of("ACTIVE", "ON_HOLD", "CLOSED").contains(patch.getLifecycleStatus())) {
-                throw new BusinessException("无效的项目生命周期状态: " + patch.getLifecycleStatus());
+                throw new BusinessException("无效的项目生命周期状态：" + patch.getLifecycleStatus()
+                        + "，须为 " + Labels.options(java.util.List.of("ACTIVE", "ON_HOLD", "CLOSED"), Labels::lifecycle) + " 之一");
             }
             old.setLifecycleStatus(patch.getLifecycleStatus());
         }
