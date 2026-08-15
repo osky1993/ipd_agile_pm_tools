@@ -1,5 +1,6 @@
 package com.ipd.toolbox.service;
 
+import com.ipd.toolbox.common.Labels;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ipd.toolbox.common.BusinessException;
 import com.ipd.toolbox.domain.entity.Baseline;
@@ -162,7 +163,7 @@ public class TimeMachineService {
             if (d.getDecidedAt() != null && !d.getDecidedAt().isBefore(fromEnd)
                     && d.getDecidedAt().isBefore(toEnd)) {
                 periodEvents.add(new DayEvent("DECISION",
-                        d.getDecidedAt().toLocalDate() + " 决策 " + d.getCode() + " 结论 " + d.getConclusion()));
+                        d.getDecidedAt().toLocalDate() + " 决策 " + d.getCode() + " 结论 " + Labels.conclusion(d.getConclusion())));
             }
         }
         for (Baseline b : baselineMapper.selectList(new QueryWrapper<Baseline>()
@@ -268,7 +269,7 @@ public class TimeMachineService {
                 .eq("project_id", projectId).orderByAsc("id"))) {
             if (d.getDecidedAt() != null) {
                 events.add(new EventPoint(d.getDecidedAt().toLocalDate(), "DECISION",
-                        d.getCode() + " " + d.getConclusion(), d.getId()));
+                        d.getCode() + " " + Labels.conclusion(d.getConclusion()), d.getId()));
             }
         }
         for (Baseline b : baselineMapper.selectList(new QueryWrapper<Baseline>()
@@ -432,7 +433,7 @@ public class TimeMachineService {
         for (Decision d : decisionMapper.selectList(new QueryWrapper<Decision>()
                 .eq("project_id", projectId))) {
             if (d.getDecidedAt() != null && d.getDecidedAt().toLocalDate().equals(date)) {
-                out.add(new DayEvent("DECISION", "决策 " + d.getCode() + " 结论 " + d.getConclusion()
+                out.add(new DayEvent("DECISION", "决策 " + d.getCode() + " 结论 " + Labels.conclusion(d.getConclusion())
                         + (d.getReason() != null ? "：" + d.getReason() : "")));
             }
         }

@@ -12,6 +12,9 @@ frontend/.vite/
 frontend/e2e/.state/
 deploy/.e2e/
 
+# 本地演示数据与建档素材：仅限本机运行环境，不入库、不外发
+deploy/local/
+
 # mcp
 mcp/node_modules/
 mcp/dist/
